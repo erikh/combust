@@ -4,6 +4,13 @@
 
 Community-contributed helpers and integrations for Combust.
 
+## Contents
+
+| Integration | Description |
+|-------------|-------------|
+| [Makefile.tmux](#makefiletmux) | Run combust tasks in parallel tmux windows |
+| [taskwarrior-tui](#taskwarrior-tui) | Drive combust from taskwarrior-tui shortcuts |
+
 ## Makefile.tmux
 
 A Makefile for running combust tasks in parallel using tmux windows. Each target spawns a new tmux window per task, letting you monitor all running tasks from your tmux status bar.
@@ -40,3 +47,49 @@ From inside a tmux session:
 ```sh
 make -f Makefile.tmux run-all
 ```
+
+## taskwarrior-tui
+
+Shortcut scripts that let you drive combust directly from [taskwarrior-tui](https://github.com/kdheepak/taskwarrior-tui). Each script receives a task UUID from taskwarrior-tui, extracts the project and task name, then runs the corresponding combust command.
+
+| Script | Shortcut | Description |
+|--------|----------|-------------|
+| `combust-edit.sh` | `1` | Open the task spec in your editor and mark the combust UDA |
+| `combust-run.sh` | `2` | Run the task with combust |
+| `combust-status.sh` | `3` | Show combust status for the task's project |
+
+The scripts derive the combust task name from the first two words of the taskwarrior description (lowercased, joined with `_`), and locate the project directory at `~/src/combust/<project>` using the taskwarrior `project` field.
+
+### Installation
+
+Copy the scripts to your taskwarrior-tui shortcut directory:
+
+```sh
+mkdir -p ~/.config/taskwarrior-tui/shortcut-scripts
+cp contrib/taskwarrior-tui/*.sh ~/.config/taskwarrior-tui/shortcut-scripts/
+chmod +x ~/.config/taskwarrior-tui/shortcut-scripts/*.sh
+```
+
+### Configuration
+
+Add the following to your `~/.taskrc` to register the shortcut scripts and set up the combust UDA:
+
+```ini
+# Combust UDA — tracks whether a task has a combust spec
+uda.combust.type=string
+uda.combust.label=Combust
+uda.combust.values=X,.
+uda.combust.default=.
+color.uda.combust.X=color2
+
+# Show the combust column in the next report
+report.next.columns=id,start.age,entry.age,depends,priority,project,tags,recur,scheduled.countdown,due.relative,until.remaining,description,urgency,combust
+report.next.labels=ID,Active,Age,Deps,P,Project,Tag,Recur,S,Due,Until,Description,Urg,Combust
+
+# Register shortcut scripts (triggered by pressing 1, 2, 3 in taskwarrior-tui)
+uda.taskwarrior-tui.shortcuts.1=~/.config/taskwarrior-tui/shortcut-scripts/combust-edit.sh
+uda.taskwarrior-tui.shortcuts.2=~/.config/taskwarrior-tui/shortcut-scripts/combust-run.sh
+uda.taskwarrior-tui.shortcuts.3=~/.config/taskwarrior-tui/shortcut-scripts/combust-status.sh
+```
+
+With this in place, select a task in taskwarrior-tui and press `1` to edit its combust spec, `2` to run it, or `3` to check status.
