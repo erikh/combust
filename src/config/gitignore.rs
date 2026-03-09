@@ -38,10 +38,11 @@ fn build_managed_section(private: bool) -> String {
     section.push('\n');
 
     if private {
-        section.push_str(".combust\n");
+        section.push_str(".combust/design\n");
+        section.push_str(".combust/work/\n");
+        section.push_str(".combust/*.lock\n");
     } else {
         section.push_str(".combust/work/\n");
-        section.push_str(".combust/config.json\n");
         section.push_str(".combust/*.lock\n");
     }
 
@@ -87,7 +88,8 @@ mod tests {
         assert!(content.contains(BEGIN_MARKER));
         assert!(content.contains(END_MARKER));
         assert!(content.contains(".combust/work/"));
-        assert!(content.contains(".combust/config.json"));
+        assert!(content.contains(".combust/*.lock"));
+        assert!(!content.contains(".combust/config.json"));
     }
 
     #[test]
@@ -96,8 +98,9 @@ mod tests {
         sync_gitignore(tmp.path(), true).unwrap();
 
         let content = fs::read_to_string(tmp.path().join(".gitignore")).unwrap();
-        assert!(content.contains(".combust\n"));
-        assert!(!content.contains(".combust/work/"));
+        assert!(content.contains(".combust/design\n"));
+        assert!(content.contains(".combust/work/"));
+        assert!(content.contains(".combust/*.lock"));
     }
 
     #[test]

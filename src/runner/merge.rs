@@ -173,7 +173,7 @@ impl Runner {
     ) -> Result<()> {
         let sha = repo.last_commit_sha().context("getting merge SHA")?;
 
-        let record = Record::new(&self.design.path);
+        let record = Record::new(&self.design.state_path);
         record
             .add(&sha, &format!("merge:{}", task.label()))
             .context("recording merge commit")?;

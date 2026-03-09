@@ -16,6 +16,19 @@ impl Repo {
         }
     }
 
+    /// Clones a repository from a URL into the target directory.
+    pub fn clone_repo(url: &str, target: &Path) -> Result<Repo> {
+        let target_str = target.to_string_lossy();
+        // Run clone from the parent directory (or current dir).
+        let parent = target.parent().unwrap_or(Path::new("."));
+        std::fs::create_dir_all(parent)
+            .context("creating parent directory for clone")?;
+        run_git(parent, &["clone", url, &target_str])?;
+        Ok(Repo {
+            dir: target.to_path_buf(),
+        })
+    }
+
     /// Returns true if the given path contains a .git directory or file.
     pub fn is_git_repo(path: &Path) -> bool {
         path.join(".git").exists()

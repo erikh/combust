@@ -56,7 +56,10 @@ pub struct ReviewFlags {
 pub enum Commands {
     /// Initialize a combust project
     Init {
-        /// Store design data in ~/.local/share/combust/ (symlink .combust)
+        /// Repository URL to clone (optional)
+        url: Option<String>,
+
+        /// Store design data in ~/.local/share/combust/ (symlink .combust/design)
         #[arg(long)]
         private: bool,
 
@@ -370,14 +373,36 @@ pub enum MilestoneCommands {
 impl Cli {
     pub async fn run(self) -> Result<()> {
         match self.command {
-            Commands::Init { private, tmux, existing } => {
-                let base = existing
-                    .map(std::path::PathBuf::from)
-                    .unwrap_or_else(|| std::env::current_dir().unwrap());
+            Commands::Init { url, private, tmux, existing } => {
+                let base = if let Some(ref clone_url) = url {
+                    let repo_name = extract_repo_name(clone_url)?;
+                    let target = std::env::current_dir()?.join(&repo_name);
+                    crate::git::Repo::clone_repo(clone_url, &target)
+                        .with_context(|| format!("cloning {}", clone_url))?;
+                    println!("Cloned {} into {}", clone_url, target.display());
+                    target
+                } else {
+                    existing
+                        .map(std::path::PathBuf::from)
+                        .unwrap_or_else(|| std::env::current_dir().unwrap())
+                };
+
                 let repo = crate::git::Repo::open(&base);
-                let source_url = repo.remote_url().unwrap_or_default();
+                let source_url = url.clone().unwrap_or_else(|| {
+                    repo.remote_url().unwrap_or_default()
+                });
                 let cfg = config::init(&base, &source_url, private)?;
-                crate::design::scaffold(&cfg.design_dir())?;
+
+                // Only scaffold design if not already initialized
+                let design_dir = cfg.design_dir();
+                if !design_dir.join("rules.md").exists() {
+                    crate::design::scaffold_design(&design_dir)?;
+                }
+
+                // Always ensure state dirs exist
+                let state_dir = cfg.state_dir()?;
+                crate::design::scaffold_state(&state_dir)?;
+
                 config::gitignore::sync_gitignore(&base, private)?;
                 if tmux {
                     let makefile_dest = base.join("Makefile.tmux");
@@ -820,6 +845,29 @@ fn configure_runner() -> Result<Runner> {
     let mut r = Runner::new(cfg)?;
     r.base_dir = std::env::current_dir()?;
     Ok(r)
+}
+
+/// Extracts the repository name from a URL.
+/// Supports: https://github.com/user/repo.git, git@github.com:user/repo.git, etc.
+fn extract_repo_name(url: &str) -> anyhow::Result<String> {
+    let url = url.trim();
+    // Strip trailing .git
+    let url = url.strip_suffix(".git").unwrap_or(url);
+    // Strip trailing /
+    let url = url.strip_suffix('/').unwrap_or(url);
+
+    // Extract last path segment
+    let name = if url.contains(':') && !url.contains("://") {
+        // SSH-style: git@github.com:user/repo
+        url.rsplit('/').next().or_else(|| url.rsplit(':').next())
+    } else {
+        url.rsplit('/').next()
+    };
+
+    match name {
+        Some(n) if !n.is_empty() => Ok(n.to_string()),
+        _ => anyhow::bail!("cannot extract repository name from URL: {}", url),
+    }
 }
 
 fn apply_autonomous_flags(r: &mut Runner, flags: &AutonomousFlags) {

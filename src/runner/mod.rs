@@ -145,7 +145,9 @@ impl Commands {
 impl Runner {
     /// Creates a Runner from the given config.
     pub fn new(cfg: Config) -> Result<Self> {
-        let dd = Dir::new(&cfg.design_dir())?;
+        let state_dir = cfg.state_dir()?;
+        fs::create_dir_all(&state_dir).context("creating state directory")?;
+        let dd = Dir::new(&cfg.design_dir(), &state_dir)?;
 
         let (commands, api_type, gitea_url, timeout) = load_combust_yml(&cfg)?;
 

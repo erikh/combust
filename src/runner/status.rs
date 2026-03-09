@@ -118,7 +118,7 @@ impl Runner {
             &self.api_type,
             &self.gitea_url,
         )?;
-        let record = crate::design::record::Record::new(&self.design.path);
+        let record = crate::design::record::Record::new(&self.design.state_path);
         let (branches, issues) = crate::issues::cleanup(
             &self.design,
             &repo,

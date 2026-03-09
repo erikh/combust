@@ -132,7 +132,7 @@ impl Runner {
     /// Checks for missing state directories.
     fn check_missing_state_dirs(&self, issues: &mut Vec<Issue>) -> Result<()> {
         let state_dirs = ["review", "merge", "completed", "abandoned"];
-        let state_base = self.design.path.join("state");
+        let state_base = self.design.state_path.clone();
 
         for dir_name in &state_dirs {
             let path = state_base.join(dir_name);
@@ -231,7 +231,7 @@ impl Runner {
 
         // Create missing state directories.
         let state_dirs = ["review", "merge", "completed", "abandoned"];
-        let state_base = self.design.path.join("state");
+        let state_base = self.design.state_path.clone();
         for dir_name in &state_dirs {
             let path = state_base.join(dir_name);
             if !path.is_dir() {
@@ -251,9 +251,9 @@ impl Runner {
                 // move_task doesn't support moving backwards. We'll move to review
                 // by direct file rename.
                 let review_dir = if task.group.is_empty() {
-                    self.design.path.join("state/review")
+                    self.design.state_path.join("review")
                 } else {
-                    self.design.path.join("state/review").join(&task.group)
+                    self.design.state_path.join("review").join(&task.group)
                 };
                 fs::create_dir_all(&review_dir)?;
                 let dest = review_dir.join(task.file_path.file_name().unwrap());

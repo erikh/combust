@@ -16,10 +16,10 @@ pub struct Record {
 }
 
 impl Record {
-    /// Creates a new Record for the given design directory.
-    pub fn new(design_dir: &Path) -> Self {
+    /// Creates a new Record for the given state directory.
+    pub fn new(state_dir: &Path) -> Self {
         Record {
-            path: design_dir.join("state/record.json"),
+            path: state_dir.join("record.json"),
         }
     }
 
@@ -72,8 +72,7 @@ mod tests {
 
     fn setup() -> (TempDir, Record) {
         let tmp = TempDir::new().unwrap();
-        fs::create_dir_all(tmp.path().join("state")).unwrap();
-        fs::write(tmp.path().join("state/record.json"), "[]\n").unwrap();
+        fs::write(tmp.path().join("record.json"), "[]\n").unwrap();
         let record = Record::new(tmp.path());
         (tmp, record)
     }

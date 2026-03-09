@@ -489,7 +489,8 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         super::super::scaffold(tmp.path()).unwrap();
         let ms = Milestones::new(tmp.path());
-        let dir = super::super::Dir::new(tmp.path()).unwrap();
+        let state_path = tmp.path().join("state");
+        let dir = super::super::Dir::new(tmp.path(), &state_path).unwrap();
         (tmp, ms, dir)
     }
 

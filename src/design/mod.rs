@@ -39,11 +39,12 @@ Stay focused.\n\n";
 #[derive(Debug, Clone)]
 pub struct Dir {
     pub path: PathBuf,
+    pub state_path: PathBuf,
 }
 
 impl Dir {
     /// Opens and validates a design directory at the given path.
-    pub fn new(path: &Path) -> Result<Self> {
+    pub fn new(path: &Path, state_path: &Path) -> Result<Self> {
         let abs = fs::canonicalize(path)
             .or_else(|_| Ok::<PathBuf, std::io::Error>(path.to_path_buf()))
             .context("resolving design dir")?;
@@ -52,7 +53,14 @@ impl Dir {
             anyhow::bail!("{} is not a directory", abs.display());
         }
 
-        Ok(Dir { path: abs })
+        let abs_state = fs::canonicalize(state_path)
+            .or_else(|_| Ok::<PathBuf, std::io::Error>(state_path.to_path_buf()))
+            .context("resolving state dir")?;
+
+        Ok(Dir {
+            path: abs,
+            state_path: abs_state,
+        })
     }
 
     fn read_file(&self, name: &str) -> Result<String> {
@@ -97,7 +105,7 @@ impl Dir {
         match state {
             TaskState::Pending => self.pending_tasks(),
             _ => self.discover_tasks(
-                &self.path.join("state").join(state.as_str()),
+                &self.state_path.join(state.as_str()),
                 "",
                 state,
             ),
@@ -139,7 +147,7 @@ impl Dir {
         let dest_dir = match new_state {
             TaskState::Pending => anyhow::bail!("cannot move task to pending state"),
             _ => {
-                let mut d = self.path.join("state").join(new_state.as_str());
+                let mut d = self.state_path.join(new_state.as_str());
                 if !task.group.is_empty() {
                     d = d.join(&task.group);
                 }
@@ -330,8 +338,8 @@ pub fn ensure_combust_yml(path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Creates the full design directory skeleton tree at the given path.
-pub fn scaffold(path: &Path) -> Result<()> {
+/// Creates the design directory skeleton tree at the given path.
+pub fn scaffold_design(path: &Path) -> Result<()> {
     // If rules.md already exists, assume scaffolded; just ensure combust.yml.
     if path.join("rules.md").exists() {
         return ensure_combust_yml(path);
@@ -340,10 +348,6 @@ pub fn scaffold(path: &Path) -> Result<()> {
     let dirs = [
         "tasks",
         "other",
-        "state/review",
-        "state/merge",
-        "state/completed",
-        "state/abandoned",
         "milestone/history",
         "milestone/delivered",
     ];
@@ -358,7 +362,6 @@ pub fn scaffold(path: &Path) -> Result<()> {
         ("lint.md", ""),
         ("functional.md", ""),
         ("combust.yml", DEFAULT_COMBUST_YML),
-        ("state/record.json", "[]\n"),
     ];
 
     for (name, content) in placeholders {
@@ -367,6 +370,37 @@ pub fn scaffold(path: &Path) -> Result<()> {
             .with_context(|| format!("creating {}", name))?;
     }
 
+    Ok(())
+}
+
+/// Creates the state directory skeleton tree at the given path.
+pub fn scaffold_state(state_path: &Path) -> Result<()> {
+    let dirs = [
+        "review",
+        "merge",
+        "completed",
+        "abandoned",
+    ];
+
+    for d in &dirs {
+        fs::create_dir_all(state_path.join(d))
+            .with_context(|| format!("creating state directory {}", d))?;
+    }
+
+    let record_path = state_path.join("record.json");
+    if !record_path.exists() {
+        fs::write(&record_path, "[]\n")
+            .context("creating record.json")?;
+    }
+
+    Ok(())
+}
+
+/// Creates the full design + state directory skeleton tree at the given path.
+/// This is a convenience wrapper for backward compatibility.
+pub fn scaffold(path: &Path) -> Result<()> {
+    scaffold_design(path)?;
+    scaffold_state(&path.join("state"))?;
     Ok(())
 }
 
@@ -401,7 +435,8 @@ mod tests {
     fn setup_design_dir() -> (TempDir, Dir) {
         let tmp = TempDir::new().unwrap();
         scaffold(tmp.path()).unwrap();
-        let dir = Dir::new(tmp.path()).unwrap();
+        let state_path = tmp.path().join("state");
+        let dir = Dir::new(tmp.path(), &state_path).unwrap();
         (tmp, dir)
     }
 
@@ -426,6 +461,65 @@ mod tests {
     }
 
     #[test]
+    fn test_scaffold_design_only() {
+        let tmp = TempDir::new().unwrap();
+        scaffold_design(tmp.path()).unwrap();
+
+        assert!(tmp.path().join("tasks").is_dir());
+        assert!(tmp.path().join("other").is_dir());
+        assert!(tmp.path().join("milestone/history").is_dir());
+        assert!(tmp.path().join("milestone/delivered").is_dir());
+        assert!(tmp.path().join("rules.md").is_file());
+        assert!(tmp.path().join("lint.md").is_file());
+        assert!(tmp.path().join("functional.md").is_file());
+        assert!(tmp.path().join("combust.yml").is_file());
+        // State dirs should NOT exist
+        assert!(!tmp.path().join("state").exists());
+    }
+
+    #[test]
+    fn test_scaffold_state_only() {
+        let tmp = TempDir::new().unwrap();
+        let state_dir = tmp.path().join("state");
+        scaffold_state(&state_dir).unwrap();
+
+        assert!(state_dir.join("review").is_dir());
+        assert!(state_dir.join("merge").is_dir());
+        assert!(state_dir.join("completed").is_dir());
+        assert!(state_dir.join("abandoned").is_dir());
+        assert!(state_dir.join("record.json").is_file());
+        // Design dirs should NOT exist
+        assert!(!tmp.path().join("tasks").exists());
+        assert!(!tmp.path().join("rules.md").exists());
+    }
+
+    #[test]
+    fn test_dir_with_separate_state_path() {
+        let tmp = TempDir::new().unwrap();
+        let design_dir = tmp.path().join("design");
+        let state_dir = tmp.path().join("state");
+        scaffold_design(&design_dir).unwrap();
+        scaffold_state(&state_dir).unwrap();
+
+        let dir = Dir::new(&design_dir, &state_dir).unwrap();
+
+        // Create a pending task
+        fs::write(dir.path.join("tasks/my-task.md"), "Content").unwrap();
+        let pending = dir.pending_tasks().unwrap();
+        assert_eq!(pending.len(), 1);
+
+        // Move task to review (uses state_path)
+        let mut task = dir.find_task("my-task").unwrap();
+        dir.move_task(&mut task, TaskState::Review).unwrap();
+        assert!(state_dir.join("review/my-task.md").exists());
+        assert!(!design_dir.join("tasks/my-task.md").exists());
+
+        // Find task by state (uses state_path)
+        let review_tasks = dir.tasks_by_state(TaskState::Review).unwrap();
+        assert_eq!(review_tasks.len(), 1);
+    }
+
+    #[test]
     fn test_scaffold_skips_existing() {
         let tmp = TempDir::new().unwrap();
         fs::create_dir_all(tmp.path()).unwrap();
@@ -443,13 +537,18 @@ mod tests {
     #[test]
     fn test_new_dir() {
         let tmp = TempDir::new().unwrap();
-        let dir = Dir::new(tmp.path());
+        let state_dir = tmp.path().join("state");
+        fs::create_dir_all(&state_dir).unwrap();
+        let dir = Dir::new(tmp.path(), &state_dir);
         assert!(dir.is_ok());
     }
 
     #[test]
     fn test_new_dir_not_exist() {
-        let result = Dir::new(std::path::Path::new("/nonexistent/path/that/does/not/exist"));
+        let result = Dir::new(
+            std::path::Path::new("/nonexistent/path/that/does/not/exist"),
+            std::path::Path::new("/nonexistent/state"),
+        );
         assert!(result.is_err());
     }
 
@@ -458,7 +557,9 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let file_path = tmp.path().join("afile");
         fs::write(&file_path, "content").unwrap();
-        let result = Dir::new(&file_path);
+        let state_dir = tmp.path().join("state");
+        fs::create_dir_all(&state_dir).unwrap();
+        let result = Dir::new(&file_path, &state_dir);
         assert!(result.is_err());
     }
 
@@ -486,8 +587,10 @@ mod tests {
     #[test]
     fn test_missing_optional_files() {
         let tmp = TempDir::new().unwrap();
+        let state_dir = tmp.path().join("state");
+        fs::create_dir_all(&state_dir).unwrap();
         // Don't scaffold - just create the bare directory.
-        let dir = Dir::new(tmp.path()).unwrap();
+        let dir = Dir::new(tmp.path(), &state_dir).unwrap();
         assert_eq!(dir.rules().unwrap(), "");
         assert_eq!(dir.lint().unwrap(), "");
         assert_eq!(dir.functional().unwrap(), "");
@@ -521,7 +624,9 @@ mod tests {
     #[test]
     fn test_assemble_document_minimal() {
         let tmp = TempDir::new().unwrap();
-        let dir = Dir::new(tmp.path()).unwrap();
+        let state_dir = tmp.path().join("state");
+        fs::create_dir_all(&state_dir).unwrap();
+        let dir = Dir::new(tmp.path(), &state_dir).unwrap();
         // No rules.md, lint.md, or functional.md exist.
         let doc = dir.assemble_document("Do the thing", "").unwrap();
 
@@ -570,8 +675,10 @@ mod tests {
     #[test]
     fn test_pending_tasks_empty_dir() {
         let tmp = TempDir::new().unwrap();
+        let state_dir = tmp.path().join("state");
+        fs::create_dir_all(&state_dir).unwrap();
         // No tasks/ dir at all.
-        let dir = Dir::new(tmp.path()).unwrap();
+        let dir = Dir::new(tmp.path(), &state_dir).unwrap();
         let tasks = dir.pending_tasks().unwrap();
         assert!(tasks.is_empty());
     }
@@ -750,7 +857,9 @@ mod tests {
     #[test]
     fn test_other_files_empty() {
         let tmp = TempDir::new().unwrap();
-        let dir = Dir::new(tmp.path()).unwrap();
+        let state_dir = tmp.path().join("state");
+        fs::create_dir_all(&state_dir).unwrap();
+        let dir = Dir::new(tmp.path(), &state_dir).unwrap();
         let files = dir.other_files().unwrap();
         assert!(files.is_empty());
     }
@@ -799,7 +908,9 @@ mod tests {
     #[test]
     fn test_other_files_no_dir() {
         let tmp = TempDir::new().unwrap();
-        let dir = Dir::new(tmp.path()).unwrap();
+        let state_dir = tmp.path().join("state");
+        fs::create_dir_all(&state_dir).unwrap();
+        let dir = Dir::new(tmp.path(), &state_dir).unwrap();
         // No other/ directory exists — should return empty.
         let files = dir.other_files().unwrap();
         assert!(files.is_empty());

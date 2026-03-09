@@ -13,6 +13,7 @@ mod verify_tests {
         _temp: TempDir,
         base_dir: PathBuf,
         design_dir: PathBuf,
+        state_dir: PathBuf,
         config: Config,
     }
 
@@ -38,10 +39,12 @@ mod verify_tests {
 
         let combust_dir = base_dir.join(".combust");
         let design_dir = combust_dir.join("design");
+        let state_dir = base_dir.join("test-state");
         fs::create_dir_all(combust_dir.join("work")).unwrap();
         fs::create_dir_all(&design_dir).unwrap();
 
-        design::scaffold(&design_dir).unwrap();
+        design::scaffold_design(&design_dir).unwrap();
+        design::scaffold_state(&state_dir).unwrap();
         fs::write(design_dir.join("rules.md"), "Follow best practices.").unwrap();
         fs::write(design_dir.join("lint.md"), "Use gofmt.").unwrap();
         fs::write(design_dir.join("functional.md"), "Tests must pass.").unwrap();
@@ -56,8 +59,8 @@ mod verify_tests {
             private: false,
             theme: crate::config::DEFAULT_THEME.to_string(),
             base_dir: base_dir.clone(),
+            state_dir_override: Some(state_dir.clone()),
         };
-        config.save(&base_dir).unwrap();
 
         std::process::Command::new("git")
             .args(["add", "-A"])
@@ -74,6 +77,7 @@ mod verify_tests {
             _temp: temp,
             base_dir,
             design_dir,
+            state_dir,
             config,
         }
     }
@@ -82,7 +86,7 @@ mod verify_tests {
         env: &TestEnv,
         claude_fn: Box<dyn Fn(ClaudeRunConfig) -> anyhow::Result<()> + Send + Sync>,
     ) -> Runner {
-        let dd = crate::design::Dir::new(&env.design_dir).unwrap();
+        let dd = crate::design::Dir::new(&env.design_dir, &env.state_dir).unwrap();
         Runner {
             config: env.config.clone(),
             design: dd,
@@ -130,7 +134,7 @@ mod verify_tests {
     #[test]
     fn test_verify_document_contains_mission() {
         let env = setup_test_env();
-        let dd = crate::design::Dir::new(&env.design_dir).unwrap();
+        let dd = crate::design::Dir::new(&env.design_dir, &env.state_dir).unwrap();
         let doc =
             assemble_verify_document(&dd, "Tests must pass.", false, &HashMap::new()).unwrap();
         assert!(doc.contains("# Mission"));
@@ -139,7 +143,7 @@ mod verify_tests {
     #[test]
     fn test_verify_document_contains_verification_instructions() {
         let env = setup_test_env();
-        let dd = crate::design::Dir::new(&env.design_dir).unwrap();
+        let dd = crate::design::Dir::new(&env.design_dir, &env.state_dir).unwrap();
         let doc =
             assemble_verify_document(&dd, "Tests must pass.", false, &HashMap::new()).unwrap();
         assert!(doc.contains("1. Find the relevant code"));
@@ -152,7 +156,7 @@ mod verify_tests {
     #[test]
     fn test_verify_document_contains_rules_and_lint() {
         let env = setup_test_env();
-        let dd = crate::design::Dir::new(&env.design_dir).unwrap();
+        let dd = crate::design::Dir::new(&env.design_dir, &env.state_dir).unwrap();
         let doc =
             assemble_verify_document(&dd, "Tests must pass.", false, &HashMap::new()).unwrap();
 
@@ -172,7 +176,7 @@ mod verify_tests {
     #[test]
     fn test_verify_document_contains_functional_spec() {
         let env = setup_test_env();
-        let dd = crate::design::Dir::new(&env.design_dir).unwrap();
+        let dd = crate::design::Dir::new(&env.design_dir, &env.state_dir).unwrap();
         let doc =
             assemble_verify_document(&dd, "Tests must pass.", false, &HashMap::new()).unwrap();
         assert!(doc.contains("# Functional Specification"));
@@ -182,7 +186,7 @@ mod verify_tests {
     #[test]
     fn test_verify_document_contains_commit_instructions() {
         let env = setup_test_env();
-        let dd = crate::design::Dir::new(&env.design_dir).unwrap();
+        let dd = crate::design::Dir::new(&env.design_dir, &env.state_dir).unwrap();
         let doc =
             assemble_verify_document(&dd, "Tests must pass.", false, &HashMap::new()).unwrap();
         assert!(doc.contains("# Commit Instructions"));
@@ -191,7 +195,7 @@ mod verify_tests {
     #[test]
     fn test_verify_document_contains_final_sync() {
         let env = setup_test_env();
-        let dd = crate::design::Dir::new(&env.design_dir).unwrap();
+        let dd = crate::design::Dir::new(&env.design_dir, &env.state_dir).unwrap();
         let doc =
             assemble_verify_document(&dd, "Tests must pass.", false, &HashMap::new()).unwrap();
         assert!(doc.contains("# Final Sync"));
@@ -200,7 +204,7 @@ mod verify_tests {
     #[test]
     fn test_verify_document_contains_pass_fail_files() {
         let env = setup_test_env();
-        let dd = crate::design::Dir::new(&env.design_dir).unwrap();
+        let dd = crate::design::Dir::new(&env.design_dir, &env.state_dir).unwrap();
         let doc =
             assemble_verify_document(&dd, "Tests must pass.", false, &HashMap::new()).unwrap();
         assert!(doc.contains("verify-passed.txt"));
@@ -210,7 +214,7 @@ mod verify_tests {
     #[test]
     fn test_verify_document_spec_is_authoritative() {
         let env = setup_test_env();
-        let dd = crate::design::Dir::new(&env.design_dir).unwrap();
+        let dd = crate::design::Dir::new(&env.design_dir, &env.state_dir).unwrap();
         let doc =
             assemble_verify_document(&dd, "Tests must pass.", false, &HashMap::new()).unwrap();
         assert!(doc.contains("fix the code"));
@@ -220,7 +224,7 @@ mod verify_tests {
     #[test]
     fn test_verify_document_serial_tests() {
         let env = setup_test_env();
-        let dd = crate::design::Dir::new(&env.design_dir).unwrap();
+        let dd = crate::design::Dir::new(&env.design_dir, &env.state_dir).unwrap();
         let doc =
             assemble_verify_document(&dd, "Tests must pass.", false, &HashMap::new()).unwrap();
         assert!(doc.contains("serially"));
@@ -229,7 +233,7 @@ mod verify_tests {
     #[test]
     fn test_verify_document_ends_with_plan_mode() {
         let env = setup_test_env();
-        let dd = crate::design::Dir::new(&env.design_dir).unwrap();
+        let dd = crate::design::Dir::new(&env.design_dir, &env.state_dir).unwrap();
         let doc =
             assemble_verify_document(&dd, "Tests must pass.", false, &HashMap::new()).unwrap();
         assert!(doc.trim_end().ends_with("plan mode immediately."));
@@ -238,7 +242,7 @@ mod verify_tests {
     #[test]
     fn test_verify_document_test_coverage() {
         let env = setup_test_env();
-        let dd = crate::design::Dir::new(&env.design_dir).unwrap();
+        let dd = crate::design::Dir::new(&env.design_dir, &env.state_dir).unwrap();
         let doc =
             assemble_verify_document(&dd, "Tests must pass.", false, &HashMap::new()).unwrap();
         assert!(doc.contains("test coverage"));
@@ -260,6 +264,7 @@ mod reconcile_tests {
         _temp: TempDir,
         base_dir: PathBuf,
         design_dir: PathBuf,
+        state_dir: PathBuf,
         config: Config,
     }
 
@@ -285,10 +290,12 @@ mod reconcile_tests {
 
         let combust_dir = base_dir.join(".combust");
         let design_dir = combust_dir.join("design");
+        let state_dir = base_dir.join("test-state");
         fs::create_dir_all(combust_dir.join("work")).unwrap();
         fs::create_dir_all(&design_dir).unwrap();
 
-        design::scaffold(&design_dir).unwrap();
+        design::scaffold_design(&design_dir).unwrap();
+        design::scaffold_state(&state_dir).unwrap();
         fs::write(design_dir.join("rules.md"), "Follow best practices.").unwrap();
         fs::write(design_dir.join("lint.md"), "Use gofmt.").unwrap();
         fs::write(design_dir.join("functional.md"), "Tests must pass.").unwrap();
@@ -303,8 +310,8 @@ mod reconcile_tests {
             private: false,
             theme: crate::config::DEFAULT_THEME.to_string(),
             base_dir: base_dir.clone(),
+            state_dir_override: Some(state_dir.clone()),
         };
-        config.save(&base_dir).unwrap();
 
         std::process::Command::new("git")
             .args(["add", "-A"])
@@ -321,6 +328,7 @@ mod reconcile_tests {
             _temp: temp,
             base_dir,
             design_dir,
+            state_dir,
             config,
         }
     }
@@ -329,7 +337,7 @@ mod reconcile_tests {
         env: &TestEnv,
         claude_fn: Box<dyn Fn(ClaudeRunConfig) -> anyhow::Result<()> + Send + Sync>,
     ) -> Runner {
-        let dd = crate::design::Dir::new(&env.design_dir).unwrap();
+        let dd = crate::design::Dir::new(&env.design_dir, &env.state_dir).unwrap();
         Runner {
             config: env.config.clone(),
             design: dd,
@@ -455,20 +463,19 @@ mod reconcile_tests {
     fn test_reconcile_preserves_other_states() {
         let env = setup_test_env();
 
-        fs::create_dir_all(env.design_dir.join("state/completed")).unwrap();
+        // State dirs are now in state_dir, not design_dir
         fs::write(
-            env.design_dir.join("state/completed/done-task.md"),
+            env.state_dir.join("completed/done-task.md"),
             "Done task content",
         )
         .unwrap();
-        fs::create_dir_all(env.design_dir.join("state/review")).unwrap();
         fs::write(
-            env.design_dir.join("state/review/review-task.md"),
+            env.state_dir.join("review/review-task.md"),
             "Review task content",
         )
         .unwrap();
 
-        let dd = crate::design::Dir::new(&env.design_dir).unwrap();
+        let dd = crate::design::Dir::new(&env.design_dir, &env.state_dir).unwrap();
         let completed = dd.tasks_by_state(TaskState::Completed).unwrap();
         assert_eq!(completed.len(), 1);
 
@@ -500,6 +507,7 @@ mod runner_integration_tests {
         _temp: TempDir,
         base_dir: PathBuf,
         design_dir: PathBuf,
+        state_dir: PathBuf,
         config: Config,
     }
 
@@ -530,10 +538,12 @@ mod runner_integration_tests {
 
         let combust_dir = base_dir.join(".combust");
         let design_dir = combust_dir.join("design");
+        let state_dir = base_dir.join("test-state");
         fs::create_dir_all(combust_dir.join("work")).unwrap();
         fs::create_dir_all(&design_dir).unwrap();
 
-        design::scaffold(&design_dir).unwrap();
+        design::scaffold_design(&design_dir).unwrap();
+        design::scaffold_state(&state_dir).unwrap();
         fs::write(design_dir.join("rules.md"), "Follow best practices.").unwrap();
         fs::write(design_dir.join("lint.md"), "Use gofmt.").unwrap();
         fs::write(design_dir.join("functional.md"), "Tests must pass.").unwrap();
@@ -548,8 +558,8 @@ mod runner_integration_tests {
             private: false,
             theme: crate::config::DEFAULT_THEME.to_string(),
             base_dir: base_dir.clone(),
+            state_dir_override: Some(state_dir.clone()),
         };
-        config.save(&base_dir).unwrap();
 
         std::process::Command::new("git")
             .args(["add", "-A"])
@@ -566,6 +576,7 @@ mod runner_integration_tests {
             _temp: temp,
             base_dir,
             design_dir,
+            state_dir,
             config,
         }
     }
@@ -574,7 +585,7 @@ mod runner_integration_tests {
         env: &TestEnv,
         claude_fn: Box<dyn Fn(ClaudeRunConfig) -> anyhow::Result<()> + Send + Sync>,
     ) -> Runner {
-        let dd = crate::design::Dir::new(&env.design_dir).unwrap();
+        let dd = crate::design::Dir::new(&env.design_dir, &env.state_dir).unwrap();
         Runner {
             config: env.config.clone(),
             design: dd,
@@ -684,9 +695,8 @@ mod runner_integration_tests {
     #[test]
     fn test_review_list_shows_tasks() {
         let env = setup_test_env();
-        fs::create_dir_all(env.design_dir.join("state/review")).unwrap();
         fs::write(
-            env.design_dir.join("state/review/reviewed-task.md"),
+            env.state_dir.join("review/reviewed-task.md"),
             "Review me",
         )
         .unwrap();
@@ -709,10 +719,9 @@ mod runner_integration_tests {
     #[test]
     fn test_clean_finds_task_in_any_state() {
         let env = setup_test_env();
-        // Move task to review state.
-        fs::create_dir_all(env.design_dir.join("state/review")).unwrap();
+        // Move task to review state (in state_dir now).
         fs::write(
-            env.design_dir.join("state/review/my-task.md"),
+            env.state_dir.join("review/my-task.md"),
             "Content",
         )
         .unwrap();

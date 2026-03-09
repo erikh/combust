@@ -98,7 +98,7 @@ impl Runner {
             .context("pushing branch")?;
 
         // Record the commit.
-        let record = Record::new(&self.design.path);
+        let record = Record::new(&self.design.state_path);
         record
             .add(&sha, &task.label())
             .context("recording commit")?;
