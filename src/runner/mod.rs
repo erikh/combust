@@ -365,24 +365,32 @@ fn load_combust_yml(
     Ok((cmds, api_type, gitea_url, timeout))
 }
 
+/// Build the argument list for a Claude CLI invocation.
+fn build_claude_args(cfg: &ClaudeRunConfig) -> Vec<String> {
+    let mut args = vec!["--print".to_string(), cfg.document.clone()];
+
+    if cfg.auto_accept {
+        args.push("--dangerously-skip-permissions".to_string());
+    }
+
+    if !cfg.model.is_empty() {
+        args.push("--model".to_string());
+        args.push(cfg.model.clone());
+    }
+
+    args
+}
+
 /// Default Claude CLI invocation.
 fn invoke_claude_cli(cfg: ClaudeRunConfig) -> Result<()> {
     let claude_bin = which::which("claude").context(
         "claude binary not found; install Claude Code CLI or set PATH",
     )?;
 
+    let args = build_claude_args(&cfg);
     let mut cmd = std::process::Command::new(claude_bin);
     cmd.current_dir(&cfg.repo_dir);
-    cmd.arg("--print");
-    cmd.arg("--prompt").arg(&cfg.document);
-
-    if cfg.auto_accept {
-        cmd.arg("--dangerously-skip-permissions");
-    }
-
-    if !cfg.model.is_empty() {
-        cmd.arg("--model").arg(&cfg.model);
-    }
+    cmd.args(&args);
 
     let status = cmd.status().context("running claude")?;
 

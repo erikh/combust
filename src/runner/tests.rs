@@ -939,4 +939,112 @@ mod runner_integration_tests {
         assert!(parse_timeout("").is_err());
         assert!(parse_timeout("abc").is_err());
     }
+
+    #[test]
+    fn test_build_claude_args_minimal() {
+        use super::super::build_claude_args;
+        use std::path::PathBuf;
+
+        let cfg = super::super::ClaudeRunConfig {
+            repo_dir: PathBuf::from("/tmp"),
+            document: "do the thing".to_string(),
+            model: String::new(),
+            auto_accept: false,
+            plan_mode: false,
+            force_tui: false,
+        };
+
+        let args = build_claude_args(&cfg);
+        assert_eq!(args, vec!["--print", "do the thing"]);
+    }
+
+    #[test]
+    fn test_build_claude_args_auto_accept() {
+        use super::super::build_claude_args;
+        use std::path::PathBuf;
+
+        let cfg = super::super::ClaudeRunConfig {
+            repo_dir: PathBuf::from("/tmp"),
+            document: "do the thing".to_string(),
+            model: String::new(),
+            auto_accept: true,
+            plan_mode: false,
+            force_tui: false,
+        };
+
+        let args = build_claude_args(&cfg);
+        assert_eq!(
+            args,
+            vec!["--print", "do the thing", "--dangerously-skip-permissions"]
+        );
+    }
+
+    #[test]
+    fn test_build_claude_args_with_model() {
+        use super::super::build_claude_args;
+        use std::path::PathBuf;
+
+        let cfg = super::super::ClaudeRunConfig {
+            repo_dir: PathBuf::from("/tmp"),
+            document: "do the thing".to_string(),
+            model: "claude-sonnet-4-6".to_string(),
+            auto_accept: false,
+            plan_mode: false,
+            force_tui: false,
+        };
+
+        let args = build_claude_args(&cfg);
+        assert_eq!(
+            args,
+            vec!["--print", "do the thing", "--model", "claude-sonnet-4-6"]
+        );
+    }
+
+    #[test]
+    fn test_build_claude_args_all_flags() {
+        use super::super::build_claude_args;
+        use std::path::PathBuf;
+
+        let cfg = super::super::ClaudeRunConfig {
+            repo_dir: PathBuf::from("/tmp"),
+            document: "do the thing".to_string(),
+            model: "claude-sonnet-4-6".to_string(),
+            auto_accept: true,
+            plan_mode: true,
+            force_tui: false,
+        };
+
+        let args = build_claude_args(&cfg);
+        assert_eq!(
+            args,
+            vec![
+                "--print",
+                "do the thing",
+                "--dangerously-skip-permissions",
+                "--model",
+                "claude-sonnet-4-6"
+            ]
+        );
+    }
+
+    #[test]
+    fn test_build_claude_args_no_prompt_flag() {
+        use super::super::build_claude_args;
+        use std::path::PathBuf;
+
+        let cfg = super::super::ClaudeRunConfig {
+            repo_dir: PathBuf::from("/tmp"),
+            document: "my prompt".to_string(),
+            model: String::new(),
+            auto_accept: true,
+            plan_mode: false,
+            force_tui: false,
+        };
+
+        let args = build_claude_args(&cfg);
+        // --prompt is NOT a valid Claude CLI flag; the prompt is a positional arg to --print
+        assert!(!args.contains(&"--prompt".to_string()));
+        assert_eq!(args[0], "--print");
+        assert_eq!(args[1], "my prompt");
+    }
 }
