@@ -80,7 +80,7 @@ uda.combust.type=string
 uda.combust.label=Combust
 uda.combust.values=true
 uda.combust.default=
-color.uda.combust.true=color2
+color.uda.combust.true=green
 
 # Show the combust column in the next report
 report.next.columns=id,start.age,entry.age,depends,priority,project,tags,recur,scheduled.countdown,due.relative,until.remaining,description,urgency,combust

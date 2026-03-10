@@ -35,7 +35,7 @@ try:
 
     os.chdir(dir)
     subprocess.run(["combust", "edit", name], check=True)
-    task["combust"] = "X"
+    task["combust"] = "true"
     subprocess.run(
         ["task", "import"], input=json.dumps(task), text=True, check=True
     )
