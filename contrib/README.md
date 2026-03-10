@@ -78,9 +78,9 @@ Add the following to your `~/.taskrc` to register the shortcut scripts and set u
 # Combust UDA — tracks whether a task has a combust spec
 uda.combust.type=string
 uda.combust.label=Combust
-uda.combust.values=X,.
-uda.combust.default=.
-color.uda.combust.X=color2
+uda.combust.values=true
+uda.combust.default=
+color.uda.combust.true=color2
 
 # Show the combust column in the next report
 report.next.columns=id,start.age,entry.age,depends,priority,project,tags,recur,scheduled.countdown,due.relative,until.remaining,description,urgency,combust
