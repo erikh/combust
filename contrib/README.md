@@ -54,9 +54,9 @@ Shortcut scripts that let you drive combust directly from [taskwarrior-tui](http
 
 | Script | Shortcut | Description |
 |--------|----------|-------------|
-| `combust-edit.sh` | `1` | Open the task spec in your editor and mark the combust UDA |
-| `combust-run.sh` | `2` | Run the task with combust |
-| `combust-status.sh` | `3` | Show combust status for the task's project |
+| `combust-edit.py` | `1` | Open the task spec in your editor and mark the combust UDA |
+| `combust-run.py` | `2` | Run the task with combust |
+| `combust-status.py` | `3` | Show combust status for the task's project |
 
 The scripts derive the combust task name from the first two words of the taskwarrior description (lowercased, joined with `_`), and locate the project directory at `~/src/combust/<project>` using the taskwarrior `project` field.
 
@@ -66,8 +66,8 @@ Copy the scripts to your taskwarrior-tui shortcut directory:
 
 ```sh
 mkdir -p ~/.config/taskwarrior-tui/shortcut-scripts
-cp contrib/taskwarrior-tui/*.sh ~/.config/taskwarrior-tui/shortcut-scripts/
-chmod +x ~/.config/taskwarrior-tui/shortcut-scripts/*.sh
+cp contrib/taskwarrior-tui/*.py ~/.config/taskwarrior-tui/shortcut-scripts/
+chmod +x ~/.config/taskwarrior-tui/shortcut-scripts/*.py
 ```
 
 ### Configuration
@@ -87,9 +87,9 @@ report.next.columns=id,start.age,entry.age,depends,priority,project,tags,recur,s
 report.next.labels=ID,Active,Age,Deps,P,Project,Tag,Recur,S,Due,Until,Description,Urg,Combust
 
 # Register shortcut scripts (triggered by pressing 1, 2, 3 in taskwarrior-tui)
-uda.taskwarrior-tui.shortcuts.1=~/.config/taskwarrior-tui/shortcut-scripts/combust-edit.sh
-uda.taskwarrior-tui.shortcuts.2=~/.config/taskwarrior-tui/shortcut-scripts/combust-run.sh
-uda.taskwarrior-tui.shortcuts.3=~/.config/taskwarrior-tui/shortcut-scripts/combust-status.sh
+uda.taskwarrior-tui.shortcuts.1=~/.config/taskwarrior-tui/shortcut-scripts/combust-edit.py
+uda.taskwarrior-tui.shortcuts.2=~/.config/taskwarrior-tui/shortcut-scripts/combust-run.py
+uda.taskwarrior-tui.shortcuts.3=~/.config/taskwarrior-tui/shortcut-scripts/combust-status.py
 ```
 
 With this in place, select a task in taskwarrior-tui and press `1` to edit its combust spec, `2` to run it, or `3` to check status.
