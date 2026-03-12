@@ -44,13 +44,6 @@ pub fn project_name(abs_base: &Path) -> String {
         .unwrap_or_else(|| "unknown".to_string())
 }
 
-/// Returns the XDG config directory for a combust project.
-pub fn xdg_project_dir(abs_base: &Path) -> Result<PathBuf> {
-    let config_dir = dirs::config_dir().context("getting config directory")?;
-    let name = project_name(abs_base);
-    Ok(config_dir.join("combust").join(name))
-}
-
 impl Config {
     /// Returns the path to the design directory.
     pub fn design_dir(&self) -> PathBuf {
@@ -67,11 +60,15 @@ impl Config {
         if let Some(ref override_dir) = self.state_dir_override {
             return Ok(override_dir.clone());
         }
-        let xdg = xdg_project_dir(&self.base_dir)?;
-        Ok(xdg.join("state"))
+        Ok(self.base_dir.join(COMBUST_DIR).join("state"))
     }
 
-    /// Saves the configuration to the XDG config location.
+    /// Returns the path to the config file inside .combust/.
+    fn config_path(base: &Path) -> PathBuf {
+        combust_path(base).join(CONFIG_FILE)
+    }
+
+    /// Saves the configuration to .combust/config.json.
     pub fn save(&self, base: &Path) -> Result<()> {
         let abs_base = fs::canonicalize(base).or_else(|_| {
             Ok::<PathBuf, std::io::Error>(if base.is_absolute() {
@@ -80,9 +77,9 @@ impl Config {
                 std::env::current_dir()?.join(base)
             })
         })?;
-        let xdg = xdg_project_dir(&abs_base)?;
-        fs::create_dir_all(&xdg).context("creating XDG config directory")?;
-        let path = xdg.join(CONFIG_FILE);
+        let combust = combust_path(&abs_base);
+        fs::create_dir_all(&combust).context("creating .combust directory")?;
+        let path = combust.join(CONFIG_FILE);
         let data = serde_json::to_string_pretty(self).context("marshaling config")?;
         fs::write(&path, data).context("writing config")?;
         Ok(())
@@ -143,10 +140,9 @@ pub fn init(base: &Path, source_repo_url: &str, private: bool) -> Result<Config>
         }
     }
 
-    // Always ensure XDG state dirs exist
-    let xdg = xdg_project_dir(&abs_base)?;
-    let state_dir = xdg.join("state");
-    fs::create_dir_all(&state_dir).context("creating XDG state directory")?;
+    // Always ensure state dir exists inside .combust/
+    let state_dir = combust.join("state");
+    fs::create_dir_all(&state_dir).context("creating state directory")?;
 
     let cfg = Config {
         source_repo_url: source_repo_url.to_string(),
@@ -156,10 +152,7 @@ pub fn init(base: &Path, source_repo_url: &str, private: bool) -> Result<Config>
         state_dir_override: None,
     };
 
-    // Only save config if not already initialized
-    if !already_initialized {
-        cfg.save(&abs_base)?;
-    }
+    cfg.save(&abs_base)?;
 
     Ok(cfg)
 }
@@ -171,11 +164,73 @@ fn private_data_dir(abs_base: &Path) -> Result<PathBuf> {
     Ok(home.join(".local/share/combust").join(name))
 }
 
-/// Reads the configuration from the XDG config location for the given `base` directory.
+/// Returns the old XDG config directory for a project (`~/.config/combust/<project_name>/`).
+fn xdg_config_dir(abs_base: &Path) -> Result<PathBuf> {
+    let home = dirs::home_dir().context("getting home directory")?;
+    let name = project_name(abs_base);
+    Ok(home.join(".config/combust").join(name))
+}
+
+/// Attempts to migrate config and state from the old XDG location to `.combust/`.
+/// Returns Ok(true) if migration happened, Ok(false) if no XDG config found.
+fn migrate_from_xdg(abs_base: &Path) -> Result<bool> {
+    let xdg_dir = xdg_config_dir(abs_base)?;
+    let xdg_config = xdg_dir.join(CONFIG_FILE);
+
+    if !xdg_config.exists() {
+        return Ok(false);
+    }
+
+    let combust = combust_path(abs_base);
+    fs::create_dir_all(&combust).context("creating .combust directory for migration")?;
+
+    // Copy config.json
+    let dest_config = combust.join(CONFIG_FILE);
+    fs::copy(&xdg_config, &dest_config).context("copying config.json from XDG location")?;
+
+    // Copy state/ directory if it exists
+    let xdg_state = xdg_dir.join("state");
+    if xdg_state.is_dir() {
+        let dest_state = combust.join("state");
+        copy_dir_recursive(&xdg_state, &dest_state)
+            .context("copying state directory from XDG location")?;
+    }
+
+    eprintln!(
+        "Migrated config from {} to {}",
+        xdg_dir.display(),
+        combust.display()
+    );
+
+    Ok(true)
+}
+
+/// Recursively copies a directory tree from `src` to `dst`.
+fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
+    fs::create_dir_all(dst)?;
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let ft = entry.file_type()?;
+        let dest_path = dst.join(entry.file_name());
+        if ft.is_dir() {
+            copy_dir_recursive(&entry.path(), &dest_path)?;
+        } else {
+            fs::copy(entry.path(), &dest_path)?;
+        }
+    }
+    Ok(())
+}
+
+/// Reads the configuration from .combust/config.json for the given `base` directory.
+/// If `.combust/config.json` is missing, attempts to migrate from the old XDG location.
 pub fn load(base: &Path) -> Result<Config> {
     let abs_base = fs::canonicalize(base).context("resolving base path")?;
-    let xdg = xdg_project_dir(&abs_base)?;
-    let config_path = xdg.join(CONFIG_FILE);
+    let config_path = Config::config_path(&abs_base);
+
+    if !config_path.exists() {
+        migrate_from_xdg(&abs_base)?;
+    }
+
     let data = fs::read_to_string(&config_path).context("reading config")?;
     let mut cfg: Config = serde_json::from_str(&data).context("parsing config")?;
     cfg.base_dir = abs_base;
@@ -183,7 +238,7 @@ pub fn load(base: &Path) -> Result<Config> {
 }
 
 /// Searches upward from the current working directory for a .combust directory,
-/// then loads config from XDG.
+/// then loads config from .combust/config.json.
 pub fn discover() -> Result<Config> {
     let mut dir = std::env::current_dir().context("getting working directory")?;
 
@@ -206,74 +261,6 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    /// Helper that inits with a state_dir_override so tests don't pollute real XDG dirs.
-    fn test_init(base: &Path, url: &str, private: bool) -> Result<Config> {
-        let abs_base = fs::canonicalize(base).or_else(|_| {
-            Ok::<PathBuf, std::io::Error>(if base.is_absolute() {
-                base.to_path_buf()
-            } else {
-                std::env::current_dir()?.join(base)
-            })
-        })?;
-
-        let combust = combust_path(&abs_base);
-        let design_dir = combust.join("design");
-        let work_dir = combust.join("work");
-
-        if private {
-            // For tests, create private design in a subdir of base instead of real ~/.local/share
-            let private_design = abs_base.join("private-data/design");
-            fs::create_dir_all(&private_design)?;
-            fs::create_dir_all(&work_dir)?;
-            fs::create_dir_all(&combust)?;
-
-            if let Ok(meta) = fs::symlink_metadata(&design_dir) {
-                if meta.file_type().is_symlink() {
-                    fs::remove_file(&design_dir)?;
-                }
-            }
-
-            #[cfg(unix)]
-            std::os::unix::fs::symlink(&private_design, &design_dir)?;
-        } else {
-            fs::create_dir_all(&design_dir)?;
-            fs::create_dir_all(&work_dir)?;
-        }
-
-        // Use a test-local state dir
-        let state_dir = abs_base.join("test-xdg/state");
-        fs::create_dir_all(&state_dir)?;
-
-        let cfg = Config {
-            source_repo_url: url.to_string(),
-            private,
-            theme: default_theme(),
-            base_dir: abs_base.clone(),
-            state_dir_override: Some(state_dir),
-        };
-
-        // Save config to test-local XDG dir
-        let xdg = abs_base.join("test-xdg");
-        fs::create_dir_all(&xdg)?;
-        let path = xdg.join(CONFIG_FILE);
-        let data = serde_json::to_string_pretty(&cfg)?;
-        fs::write(&path, data)?;
-
-        Ok(cfg)
-    }
-
-    /// Loads config from test-local XDG dir.
-    fn test_load(base: &Path) -> Result<Config> {
-        let abs_base = fs::canonicalize(base).context("resolving base path")?;
-        let xdg = abs_base.join("test-xdg");
-        let config_path = xdg.join(CONFIG_FILE);
-        let data = fs::read_to_string(&config_path).context("reading config")?;
-        let mut cfg: Config = serde_json::from_str(&data).context("parsing config")?;
-        cfg.base_dir = abs_base.clone();
-        cfg.state_dir_override = Some(abs_base.join("test-xdg/state"));
-        Ok(cfg)
-    }
-
     #[test]
     fn test_combust_path() {
         let base = Path::new("/tmp/myproject");
@@ -288,13 +275,6 @@ mod tests {
     }
 
     #[test]
-    fn test_xdg_project_dir() {
-        let dir = xdg_project_dir(Path::new("/home/user/myproject")).unwrap();
-        let config_dir = dirs::config_dir().unwrap();
-        assert_eq!(dir, config_dir.join("combust/myproject"));
-    }
-
-    #[test]
     fn test_state_dir_method() {
         let cfg = Config {
             source_repo_url: String::new(),
@@ -304,8 +284,7 @@ mod tests {
             state_dir_override: None,
         };
         let state = cfg.state_dir().unwrap();
-        let config_dir = dirs::config_dir().unwrap();
-        assert_eq!(state, config_dir.join("combust/project/state"));
+        assert_eq!(state, PathBuf::from("/project/.combust/state"));
     }
 
     #[test]
@@ -325,13 +304,13 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();
 
-        let cfg = test_init(base, "https://github.com/example/repo", false).unwrap();
+        let cfg = init(base, "https://github.com/example/repo", false).unwrap();
 
         assert!(base.join(".combust").is_dir());
         assert!(base.join(".combust/design").is_dir());
         assert!(base.join(".combust/work").is_dir());
-        assert!(base.join("test-xdg/config.json").is_file());
-        assert!(base.join("test-xdg/state").is_dir());
+        assert!(base.join(".combust/config.json").is_file());
+        assert!(base.join(".combust/state").is_dir());
         assert_eq!(cfg.source_repo_url, "https://github.com/example/repo");
         assert!(!cfg.private);
     }
@@ -341,7 +320,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();
 
-        let cfg = test_init(base, "https://example.com/repo", true).unwrap();
+        let cfg = init(base, "https://example.com/repo", true).unwrap();
 
         assert!(cfg.private);
         // The .combust/design path should be a symlink.
@@ -352,13 +331,13 @@ mod tests {
     }
 
     #[test]
-    fn test_init_creates_xdg_state() {
+    fn test_init_creates_state_dir() {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();
 
-        test_init(base, "https://example.com/repo", false).unwrap();
+        init(base, "https://example.com/repo", false).unwrap();
 
-        assert!(base.join("test-xdg/state").is_dir());
+        assert!(base.join(".combust/state").is_dir());
     }
 
     #[test]
@@ -366,7 +345,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();
 
-        let cfg1 = test_init(base, "https://example.com/repo", false).unwrap();
+        let cfg1 = init(base, "https://example.com/repo", false).unwrap();
 
         // Write some design content
         let design_dir = base.join(".combust/design");
@@ -374,7 +353,7 @@ mod tests {
         fs::write(design_dir.join("rules.md"), "Custom rules").unwrap();
 
         // Re-init should not overwrite design files
-        let cfg2 = test_init(base, "https://example.com/repo", false).unwrap();
+        let cfg2 = init(base, "https://example.com/repo", false).unwrap();
 
         assert_eq!(cfg1.source_repo_url, cfg2.source_repo_url);
         // Design content should be preserved
@@ -411,8 +390,8 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();
 
-        let original = test_init(base, "https://github.com/example/repo", false).unwrap();
-        let loaded = test_load(base).unwrap();
+        let original = init(base, "https://github.com/example/repo", false).unwrap();
+        let loaded = load(base).unwrap();
 
         assert_eq!(loaded.source_repo_url, original.source_repo_url);
         assert_eq!(loaded.private, original.private);
@@ -421,7 +400,9 @@ mod tests {
     #[test]
     fn test_load_missing_config() {
         let tmp = TempDir::new().unwrap();
-        let err = test_load(tmp.path()).unwrap_err();
+        // Create .combust dir but no config.json
+        fs::create_dir_all(tmp.path().join(".combust")).unwrap();
+        let err = load(tmp.path()).unwrap_err();
         assert!(
             err.to_string().contains("reading config"),
             "error = {:?}",
@@ -434,18 +415,58 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();
 
-        let mut cfg = test_init(base, "https://original.com/repo", false).unwrap();
+        let mut cfg = init(base, "https://original.com/repo", false).unwrap();
         cfg.source_repo_url = "https://updated.com/repo".to_string();
+        cfg.save(base).unwrap();
 
-        // Save to test-local XDG
-        let xdg = base.join("test-xdg");
-        fs::create_dir_all(&xdg).unwrap();
-        let path = xdg.join(CONFIG_FILE);
-        let data = serde_json::to_string_pretty(&cfg).unwrap();
-        fs::write(&path, data).unwrap();
-
-        let loaded = test_load(base).unwrap();
+        let loaded = load(base).unwrap();
         assert_eq!(loaded.source_repo_url, "https://updated.com/repo");
+    }
+
+    #[test]
+    fn test_xdg_migration() {
+        let tmp = TempDir::new().unwrap();
+        let project_dir = tmp.path().join("myproject");
+        fs::create_dir_all(&project_dir).unwrap();
+
+        // Create .combust dir (so discover finds it) but no config.json
+        fs::create_dir_all(project_dir.join(".combust")).unwrap();
+
+        // Simulate old XDG config
+        let home = dirs::home_dir().unwrap();
+        let xdg_dir = home.join(".config/combust/myproject");
+        fs::create_dir_all(&xdg_dir).unwrap();
+
+        let config_data = serde_json::to_string_pretty(&serde_json::json!({
+            "source_repo_url": "https://example.com/repo",
+            "private": false,
+            "theme": "base16-ocean.dark"
+        }))
+        .unwrap();
+        fs::write(xdg_dir.join("config.json"), &config_data).unwrap();
+
+        // Also create some state files at old location
+        let xdg_state = xdg_dir.join("state/completed");
+        fs::create_dir_all(&xdg_state).unwrap();
+        fs::write(xdg_state.join("old-task.md"), "Old task content").unwrap();
+
+        // load() should migrate and succeed
+        let cfg = load(&project_dir).unwrap();
+        assert_eq!(cfg.source_repo_url, "https://example.com/repo");
+
+        // Verify files were copied to .combust/
+        assert!(project_dir.join(".combust/config.json").exists());
+        assert!(project_dir
+            .join(".combust/state/completed/old-task.md")
+            .exists());
+        let task_content = fs::read_to_string(
+            project_dir.join(".combust/state/completed/old-task.md"),
+        )
+        .unwrap();
+        assert_eq!(task_content, "Old task content");
+
+        // Clean up XDG test dir
+        let _ = fs::remove_dir_all(&xdg_dir);
     }
 
     #[test]
@@ -493,10 +514,8 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();
 
-        // Create .combust dir and XDG config
         init(base, "https://example.com/repo", false).unwrap();
 
-        // Verify discover finds it via .combust directory
         let old_dir = std::env::current_dir().unwrap();
         std::env::set_current_dir(base).unwrap();
         let result = discover();
@@ -510,9 +529,9 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();
 
-        test_init(base, "https://example.com/repo", false).unwrap();
+        init(base, "https://example.com/repo", false).unwrap();
 
-        let data = fs::read_to_string(base.join("test-xdg/config.json")).unwrap();
+        let data = fs::read_to_string(base.join(".combust/config.json")).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&data).unwrap();
         assert!(
             parsed.get("base_dir").is_none(),
@@ -525,7 +544,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();
 
-        test_init(base, "https://example.com/repo", true).unwrap();
+        init(base, "https://example.com/repo", true).unwrap();
 
         // .combust/design should be a symlink
         let meta = fs::symlink_metadata(base.join(".combust/design")).unwrap();
