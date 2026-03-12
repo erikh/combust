@@ -57,15 +57,17 @@ After `combust init`, a `.combust/` directory is created:
 
 | Command                  | Description                                                         |
 | ------------------------ | ------------------------------------------------------------------- |
-| `combust init`           | Initialize a combust project                                        |
-| `combust init --private` | Store design data in `~/.local/share/combust/` (symlink `.combust`) |
-| `combust init --tmux`    | Also copy `Makefile.tmux` for tmux-based parallel task execution    |
+| `combust init`                  | Initialize a combust project                                        |
+| `combust init <url> [dir]`      | Clone a repo and initialize (optional directory name, like git)     |
+| `combust init --private`        | Store design data in `~/.local/share/combust/` (symlink `.combust`) |
+| `combust init --tmux`           | Also copy `Makefile.tmux` for tmux-based parallel task execution    |
 
 ### Task lifecycle
 
 | Command                      | Description                                                    |
 | ---------------------------- | -------------------------------------------------------------- |
 | `combust edit <task>`        | Create or edit a task's markdown spec                          |
+| `combust add <task>`         | Add a task from standard input                                 |
 | `combust run <task>`         | Execute a task — Claude implements, tests, commits, and pushes |
 | `combust review list`        | List tasks in review                                           |
 | `combust review view <task>` | View a task under review                                       |
@@ -136,7 +138,6 @@ Most commands that invoke Claude accept these flags:
 | ------------------------ | --------------------------------------------- |
 | `--model <name>`         | Override the Claude model                     |
 | `-Y`, `--no-auto-accept` | Disable auto-accept for tool calls            |
-| `-P`, `--no-plan`        | Disable plan mode                             |
 | `-N`, `--no-notify`      | Disable notifications                         |
 | `-T`, `--tui`            | Force built-in TUI instead of Claude Code CLI |
 

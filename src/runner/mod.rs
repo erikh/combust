@@ -26,7 +26,6 @@ pub struct ClaudeRunConfig {
     pub document: String,
     pub model: String,
     pub auto_accept: bool,
-    pub plan_mode: bool,
     pub force_tui: bool,
 }
 
@@ -38,7 +37,6 @@ pub type ClaudeFn = Box<dyn Fn(ClaudeRunConfig) -> Result<()> + Send + Sync>;
 pub struct SharedFlags {
     pub model: String,
     pub auto_accept: bool,
-    pub plan_mode: bool,
     pub force_tui: bool,
 }
 
@@ -50,7 +48,6 @@ pub struct Runner {
     pub base_dir: PathBuf,
     pub model: String,
     pub auto_accept: bool,
-    pub plan_mode: bool,
     pub force_tui: bool,
     pub rebase: bool,
     pub notify: bool,
@@ -160,7 +157,6 @@ impl Runner {
             base_dir: PathBuf::from("."),
             model,
             auto_accept: false,
-            plan_mode: false,
             force_tui: false,
             rebase: true,
             notify: false,
@@ -367,7 +363,11 @@ fn load_combust_yml(
 
 /// Build the argument list for a Claude CLI invocation.
 fn build_claude_args(cfg: &ClaudeRunConfig) -> Vec<String> {
-    let mut args = vec!["--print".to_string(), cfg.document.clone()];
+    let mut args = vec![
+        "--permission-mode".to_string(),
+        "plan".to_string(),
+        cfg.document.clone(),
+    ];
 
     if cfg.auto_accept {
         args.push("--dangerously-skip-permissions".to_string());

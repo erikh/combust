@@ -32,7 +32,14 @@ try:
     os.chdir(dir)
     subprocess.run(["combust", "status", "-a"], check=True)
 except Exception as e:
+    import traceback
+    log = os.path.join(os.path.expanduser("~"), ".local", "share", "combust", "shortcut-errors.log")
+    os.makedirs(os.path.dirname(log), exist_ok=True)
+    with open(log, "a") as f:
+        f.write(f"\n--- combust-status {sys.argv[1] if len(sys.argv) > 1 else '(no arg)'} ---\n")
+        traceback.print_exc(file=f)
     print(f"\nError: {e}", file=sys.stderr)
+    traceback.print_exc()
 finally:
     print("Press any key to continue...", end="", flush=True)
     wait_for_keypress()

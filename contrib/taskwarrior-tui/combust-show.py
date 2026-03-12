@@ -30,17 +30,18 @@ try:
         print(f"Error: directory {dir} does not exist", file=sys.stderr)
         sys.exit(1)
 
-    window_name = f"run:{task_id}"
-    cmd = f"cd {dir} && unset CLAUDECODE && combust run {task_id}; echo 'Press enter to close'; read"
-    subprocess.run(["tmux", "new-window", "-c", dir, "-n", window_name, cmd], check=True)
+    os.chdir(dir)
+    os.system("clear")
+    subprocess.run(["combust", "show", task_id], check=True)
 except Exception as e:
     import traceback
     log = os.path.join(os.path.expanduser("~"), ".local", "share", "combust", "shortcut-errors.log")
     os.makedirs(os.path.dirname(log), exist_ok=True)
     with open(log, "a") as f:
-        f.write(f"\n--- combust-run {sys.argv[1] if len(sys.argv) > 1 else '(no arg)'} ---\n")
+        f.write(f"\n--- combust-show {sys.argv[1] if len(sys.argv) > 1 else '(no arg)'} ---\n")
         traceback.print_exc(file=f)
     print(f"\nError: {e}", file=sys.stderr)
     traceback.print_exc()
+finally:
     print("Press any key to continue...", end="", flush=True)
     wait_for_keypress()

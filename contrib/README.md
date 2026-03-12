@@ -55,7 +55,7 @@ Shortcut scripts that let you drive combust directly from [taskwarrior-tui](http
 | Script | Shortcut | Description |
 |--------|----------|-------------|
 | `combust-edit.py` | `1` | Open the task spec in your editor and mark the combust UDA |
-| `combust-run.py` | `2` | Run the task with combust |
+| `combust-run.py` | `2` | Run the task in a new tmux window |
 | `combust-status.py` | `3` | Show combust status for the task's project |
 
 The scripts derive the combust task name from the first two words of the taskwarrior description (lowercased, joined with `_`), and locate the project directory at `~/src/combust/<project>` using the taskwarrior `project` field.

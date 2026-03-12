@@ -26,6 +26,24 @@ pub fn edit_task(design_dir: &Path, task_name: &str, editor: &str) -> Result<()>
     create_new_task(&task_path, editor)
 }
 
+/// Adds a task from provided content (e.g. piped from stdin).
+/// If the task already exists, the content is overwritten.
+pub fn add_task(design_dir: &Path, task_name: &str, content: &str) -> Result<()> {
+    let (group, name) = parse_task_name(task_name);
+
+    let tasks_dir = if group.is_empty() {
+        design_dir.join("tasks")
+    } else {
+        design_dir.join("tasks").join(&group)
+    };
+    fs::create_dir_all(&tasks_dir).context("creating tasks directory")?;
+
+    let task_path = tasks_dir.join(format!("{}.md", name));
+    fs::write(&task_path, content).context("writing task file")?;
+    println!("Created task: {}", task_path.display());
+    Ok(())
+}
+
 /// Opens an editor on a file. Creates the file first if it doesn't exist.
 fn create_new_task(task_path: &Path, editor: &str) -> Result<()> {
     let tmp = tempfile::NamedTempFile::new().context("creating temp file")?;

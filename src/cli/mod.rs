@@ -28,10 +28,6 @@ pub struct AutonomousFlags {
     #[arg(long, short = 'Y')]
     pub no_auto_accept: bool,
 
-    /// Disable plan mode
-    #[arg(long, short = 'P')]
-    pub no_plan: bool,
-
     /// Disable notifications
     #[arg(long, short = 'N')]
     pub no_notify: bool,
@@ -70,6 +66,9 @@ pub enum Commands {
         /// Path to an existing repository (default: current directory)
         #[arg(long)]
         existing: Option<String>,
+
+        /// Directory name to clone into (like git clone <url> <dir>)
+        directory: Option<String>,
     },
 
     /// Execute a design task
@@ -85,8 +84,20 @@ pub enum Commands {
     #[command(subcommand)]
     Group(GroupCommands),
 
+    /// Show a task's content regardless of its state
+    Show {
+        /// Task name (e.g., "add-auth" or "group/task")
+        task_name: String,
+    },
+
     /// Create or edit a design task
     Edit {
+        /// Task name (e.g., "add-auth" or "group/task")
+        task_name: String,
+    },
+
+    /// Add a design task from standard input
+    Add {
         /// Task name (e.g., "add-auth" or "group/task")
         task_name: String,
     },
@@ -373,10 +384,13 @@ pub enum MilestoneCommands {
 impl Cli {
     pub async fn run(self) -> Result<()> {
         match self.command {
-            Commands::Init { url, private, tmux, existing } => {
+            Commands::Init { url, private, tmux, existing, directory } => {
                 let base = if let Some(ref clone_url) = url {
-                    let repo_name = extract_repo_name(clone_url)?;
-                    let target = std::env::current_dir()?.join(&repo_name);
+                    let dir_name = match directory {
+                        Some(d) => d,
+                        None => extract_repo_name(clone_url)?,
+                    };
+                    let target = std::env::current_dir()?.join(&dir_name);
                     crate::git::Repo::clone_repo(clone_url, &target)
                         .with_context(|| format!("cloning {}", clone_url))?;
                     println!("Cloned {} into {}", clone_url, target.display());
@@ -418,7 +432,6 @@ impl Cli {
                 let mut r = configure_runner()?;
                 apply_autonomous_flags(&mut r, &flags);
                 r.auto_accept = !flags.no_auto_accept;
-                r.plan_mode = !flags.no_plan;
                 r.notify = !flags.no_notify;
                 r.run_task(&task_name)
             }
@@ -452,7 +465,6 @@ impl Cli {
                     let mut r = configure_runner()?;
                     apply_autonomous_flags(&mut r, &flags);
                     r.auto_accept = !flags.no_auto_accept;
-                    r.plan_mode = !flags.no_plan;
                     r.notify = !flags.no_notify;
                     r.run_group(&group_name)
                 }
@@ -460,16 +472,35 @@ impl Cli {
                     let mut r = configure_runner()?;
                     apply_autonomous_flags(&mut r, &flags);
                     r.auto_accept = !flags.no_auto_accept;
-                    r.plan_mode = !flags.no_plan;
                     r.notify = !flags.no_notify;
                     r.merge_group(&group_name)
                 }
             },
 
+            Commands::Show { task_name } => {
+                let r = configure_runner()?;
+                let task = r.design.find_task_any(&task_name)?;
+                let content = task.content()?;
+                println!("[{}]", task.state.as_str());
+                print!("{}", content);
+                Ok(())
+            }
+
             Commands::Edit { task_name } => {
                 let r = configure_runner()?;
                 let editor = crate::design::edit::resolve_editor()?;
                 crate::design::edit::edit_task(&r.design.path, &task_name, &editor)
+            }
+
+            Commands::Add { task_name } => {
+                let r = configure_runner()?;
+                let mut content = String::new();
+                std::io::Read::read_to_string(&mut std::io::stdin(), &mut content)
+                    .context("reading from stdin")?;
+                if content.trim().is_empty() {
+                    anyhow::bail!("empty input — task not created");
+                }
+                crate::design::edit::add_task(&r.design.path, &task_name, &content)
             }
 
             Commands::Other(cmd) => {
@@ -563,7 +594,6 @@ impl Cli {
                     ReviewCommands::Run { task_name, flags } => {
                         apply_autonomous_flags(&mut r, &flags.autonomous);
                         r.auto_accept = !flags.autonomous.no_auto_accept;
-                        r.plan_mode = !flags.autonomous.no_plan;
                         r.notify = !flags.autonomous.no_notify;
                         r.rebase = !flags.no_rebase;
                         r.review(&task_name)
@@ -575,7 +605,6 @@ impl Cli {
                 let mut r = configure_runner()?;
                 apply_autonomous_flags(&mut r, &flags.autonomous);
                 r.auto_accept = !flags.autonomous.no_auto_accept;
-                r.plan_mode = !flags.autonomous.no_plan;
                 r.notify = !flags.autonomous.no_notify;
                 r.rebase = !flags.no_rebase;
                 r.test_task(&task_name)
@@ -621,7 +650,6 @@ impl Cli {
                     MergeCommands::Run { task_name, flags } => {
                         apply_autonomous_flags(&mut r, &flags);
                         r.auto_accept = !flags.no_auto_accept;
-                        r.plan_mode = !flags.no_plan;
                         r.notify = !flags.no_notify;
                         r.merge_task(&task_name)
                     }
@@ -632,7 +660,6 @@ impl Cli {
                 let mut r = configure_runner()?;
                 apply_autonomous_flags(&mut r, &flags);
                 r.auto_accept = !flags.no_auto_accept;
-                r.plan_mode = !flags.no_plan;
                 r.notify = !flags.no_notify;
                 r.reconcile()
             }
@@ -641,7 +668,6 @@ impl Cli {
                 let mut r = configure_runner()?;
                 apply_autonomous_flags(&mut r, &flags);
                 r.auto_accept = !flags.no_auto_accept;
-                r.plan_mode = !flags.no_plan;
                 r.notify = !flags.no_notify;
                 r.verify()
             }

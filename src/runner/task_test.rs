@@ -64,7 +64,6 @@ impl Runner {
             document: doc,
             model: self.model.clone(),
             auto_accept: self.auto_accept,
-            plan_mode: self.plan_mode,
             force_tui: self.force_tui,
         };
         self.invoke_claude(cfg).context("claude failed")?;

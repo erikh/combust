@@ -94,7 +94,6 @@ mod verify_tests {
             base_dir: env.base_dir.clone(),
             model: String::new(),
             auto_accept: false,
-            plan_mode: false,
             force_tui: false,
             rebase: true,
             notify: false,
@@ -345,7 +344,6 @@ mod reconcile_tests {
             base_dir: env.base_dir.clone(),
             model: String::new(),
             auto_accept: false,
-            plan_mode: false,
             force_tui: false,
             rebase: true,
             notify: false,
@@ -593,7 +591,6 @@ mod runner_integration_tests {
             base_dir: env.base_dir.clone(),
             model: String::new(),
             auto_accept: false,
-            plan_mode: false,
             force_tui: false,
             rebase: true,
             notify: false,
@@ -950,12 +947,14 @@ mod runner_integration_tests {
             document: "do the thing".to_string(),
             model: String::new(),
             auto_accept: false,
-            plan_mode: false,
             force_tui: false,
         };
 
         let args = build_claude_args(&cfg);
-        assert_eq!(args, vec!["--print", "do the thing"]);
+        assert_eq!(
+            args,
+            vec!["--permission-mode", "plan", "do the thing"]
+        );
     }
 
     #[test]
@@ -968,14 +967,18 @@ mod runner_integration_tests {
             document: "do the thing".to_string(),
             model: String::new(),
             auto_accept: true,
-            plan_mode: false,
             force_tui: false,
         };
 
         let args = build_claude_args(&cfg);
         assert_eq!(
             args,
-            vec!["--print", "do the thing", "--dangerously-skip-permissions"]
+            vec![
+                "--permission-mode",
+                "plan",
+                "do the thing",
+                "--dangerously-skip-permissions"
+            ]
         );
     }
 
@@ -989,14 +992,19 @@ mod runner_integration_tests {
             document: "do the thing".to_string(),
             model: "claude-sonnet-4-6".to_string(),
             auto_accept: false,
-            plan_mode: false,
             force_tui: false,
         };
 
         let args = build_claude_args(&cfg);
         assert_eq!(
             args,
-            vec!["--print", "do the thing", "--model", "claude-sonnet-4-6"]
+            vec![
+                "--permission-mode",
+                "plan",
+                "do the thing",
+                "--model",
+                "claude-sonnet-4-6"
+            ]
         );
     }
 
@@ -1010,7 +1018,6 @@ mod runner_integration_tests {
             document: "do the thing".to_string(),
             model: "claude-sonnet-4-6".to_string(),
             auto_accept: true,
-            plan_mode: true,
             force_tui: false,
         };
 
@@ -1018,7 +1025,8 @@ mod runner_integration_tests {
         assert_eq!(
             args,
             vec![
-                "--print",
+                "--permission-mode",
+                "plan",
                 "do the thing",
                 "--dangerously-skip-permissions",
                 "--model",
@@ -1037,14 +1045,15 @@ mod runner_integration_tests {
             document: "my prompt".to_string(),
             model: String::new(),
             auto_accept: true,
-            plan_mode: false,
             force_tui: false,
         };
 
         let args = build_claude_args(&cfg);
-        // --prompt is NOT a valid Claude CLI flag; the prompt is a positional arg to --print
+        // --prompt and --print are NOT valid; prompt is a positional arg
         assert!(!args.contains(&"--prompt".to_string()));
-        assert_eq!(args[0], "--print");
-        assert_eq!(args[1], "my prompt");
+        assert!(!args.contains(&"--print".to_string()));
+        assert!(args.contains(&"--permission-mode".to_string()));
+        assert!(args.contains(&"plan".to_string()));
+        assert!(args.contains(&"my prompt".to_string()));
     }
 }
