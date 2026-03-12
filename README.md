@@ -10,6 +10,12 @@ You don't need a CI system, VM infrastructure, web interfaces, or pull requests.
 
 ## Install
 
+From [crates.io](https://crates.io/crates/combust):
+
+```sh
+cargo install combust
+```
+
 From source:
 
 ```sh
@@ -68,6 +74,7 @@ After `combust init`, a `.combust/` directory is created:
 | ---------------------------- | -------------------------------------------------------------- |
 | `combust edit <task>`        | Create or edit a task's markdown spec                          |
 | `combust add <task>`         | Add a task from standard input                                 |
+| `combust show <task>`        | Show a task's content regardless of its state                  |
 | `combust run <task>`         | Execute a task — Claude implements, tests, commits, and pushes |
 | `combust review list`        | List tasks in review                                           |
 | `combust review view <task>` | View a task under review                                       |

@@ -1,8 +1,10 @@
 [package]
 name = "combust"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "AI-driven local pull request workflow where Claude is the only contributor"
+license = "AGPL-3.0-only"
+repository = "https://github.com/erikh/combust"
 
 [lib]
 name = "combust"
