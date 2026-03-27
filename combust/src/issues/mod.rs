@@ -2,6 +2,7 @@ pub mod github;
 pub mod gitea;
 
 use anyhow::{Context, Result};
+use combust_db::milestone::slugify;
 use std::fs;
 use std::path::Path;
 
@@ -98,24 +99,8 @@ fn format_issue_content(issue: &Issue) -> String {
     content
 }
 
-/// Converts a title to a URL-friendly slug.
-pub fn slugify(s: &str) -> String {
-    let mut slug = String::new();
-    for c in s.chars() {
-        if c.is_alphanumeric() {
-            slug.push(c.to_ascii_lowercase());
-        } else if (c == ' ' || c == '-' || c == '_') && !slug.ends_with('-') {
-            slug.push('-');
-        }
-    }
-    if slug.len() > 60 {
-        slug.truncate(60);
-    }
-    slug.trim_matches('-').to_string()
-}
-
 /// Returns true if the task belongs to the "issues" group.
-pub fn is_issue_task(task: &crate::design::task::Task) -> bool {
+pub fn is_issue_task(task: &combust_db::task::Task) -> bool {
     task.group == "issues"
 }
 
@@ -183,12 +168,12 @@ pub fn resolve_closer(
 
 /// Cleans up completed/abandoned tasks by deleting remote branches and closing issues.
 pub fn cleanup(
-    design: &crate::design::Dir,
+    design: &combust_db::design::DesignDir,
     source_repo: &crate::git::Repo,
     closer: Option<&dyn Closer>,
-    record: &crate::design::record::Record,
+    record: &combust_db::record::Record,
 ) -> Result<(usize, usize)> {
-    use crate::design::task::TaskState;
+    use combust_db::task::TaskState;
 
     let mut branches_deleted = 0;
     let mut issues_closed = 0;
@@ -253,7 +238,7 @@ mod tests {
 
     #[test]
     fn test_is_issue_task() {
-        use crate::design::task::{Task, TaskState};
+        use combust_db::task::{Task, TaskState};
         use std::path::PathBuf;
 
         let task = Task {
@@ -477,7 +462,7 @@ mod tests {
 
     #[test]
     fn test_close_issue_non_issue_task() {
-        use crate::design::task::{Task, TaskState};
+        use combust_db::task::{Task, TaskState};
 
         let task = Task {
             name: "my-regular-task".to_string(),

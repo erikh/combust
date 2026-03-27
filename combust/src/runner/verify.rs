@@ -21,7 +21,7 @@ impl Runner {
 
         // Prepare work directory.
         let wd = base_dir
-            .join(crate::config::COMBUST_DIR)
+            .join(combust_db::config::COMBUST_DIR)
             .join("work")
             .join("_verify");
         let verify_repo = self
@@ -85,7 +85,7 @@ impl Runner {
 
 /// Builds the prompt for the verify workflow.
 pub(crate) fn assemble_verify_document(
-    design: &crate::design::Dir,
+    design: &combust_db::design::DesignDir,
     functional: &str,
     sign: bool,
     cmds: &HashMap<String, String>,

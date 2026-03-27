@@ -6,8 +6,8 @@ use super::document::{
     verification_section, PLAN_MODE_INSTRUCTION,
 };
 use super::{run_shell_command, ClaudeRunConfig, Runner};
-use crate::design::task::TaskState;
-use crate::lock::Lock;
+use combust_db::task::TaskState;
+use combust_db::lock::Lock;
 
 impl Runner {
     /// Interactive review on a task in review state.
@@ -23,7 +23,7 @@ impl Runner {
         );
 
         // Acquire lock.
-        let lock = Lock::new(&self.config.base_dir.join(crate::config::COMBUST_DIR), &task.label());
+        let lock = Lock::new(&self.config.base_dir.join(combust_db::config::COMBUST_DIR), &task.label());
         lock.acquire()
             .with_context(|| format!("acquiring lock for task {:?}", task.label()))?;
 
@@ -117,7 +117,7 @@ impl Runner {
     }
 
     /// Lists tasks in review state.
-    pub fn review_list(&self) -> Result<Vec<crate::design::task::Task>> {
+    pub fn review_list(&self) -> Result<Vec<combust_db::task::Task>> {
         self.design.tasks_by_state(TaskState::Review)
     }
 
@@ -157,8 +157,8 @@ impl Runner {
 
 /// Builds the prompt for the review workflow.
 fn assemble_review_document(
-    design: &crate::design::Dir,
-    task: &crate::design::task::Task,
+    design: &combust_db::design::DesignDir,
+    task: &combust_db::task::Task,
     sign: bool,
     cmds: &std::collections::HashMap<String, String>,
     conflict_files: &[String],

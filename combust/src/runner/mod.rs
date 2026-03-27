@@ -15,8 +15,8 @@ use anyhow::{Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::config::Config;
-use crate::design::{self, Dir};
+use combust_db::config::Config;
+use combust_db::design::{self, DesignDir};
 use crate::git::Repo;
 
 /// Parameters for a Claude invocation.
@@ -43,7 +43,7 @@ pub struct SharedFlags {
 /// Orchestrates the full combust run workflow.
 pub struct Runner {
     pub config: Config,
-    pub design: Dir,
+    pub design: DesignDir,
     pub claude: Option<ClaudeFn>,
     pub base_dir: PathBuf,
     pub model: String,
@@ -144,7 +144,7 @@ impl Runner {
     pub fn new(cfg: Config) -> Result<Self> {
         let state_dir = cfg.state_dir()?;
         fs::create_dir_all(&state_dir).context("creating state directory")?;
-        let dd = Dir::new(&cfg.design_dir(), &state_dir)?;
+        let dd = DesignDir::new(&cfg.design_dir(), &state_dir)?;
 
         let (commands, api_type, gitea_url, timeout) = load_combust_yml(&cfg)?;
 

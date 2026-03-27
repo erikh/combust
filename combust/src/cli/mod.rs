@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 
-use crate::config;
+use combust_db::config;
 use crate::runner::Runner;
 
 /// Local pull request workflow where Claude is the only contributor.
@@ -410,17 +410,17 @@ impl Cli {
                 // Only scaffold design if not already initialized
                 let design_dir = cfg.design_dir();
                 if !design_dir.join("rules.md").exists() {
-                    crate::design::scaffold_design(&design_dir)?;
+                    combust_db::design::scaffold_design(&design_dir)?;
                 }
 
                 // Always ensure state dirs exist
                 let state_dir = cfg.state_dir()?;
-                crate::design::scaffold_state(&state_dir)?;
+                combust_db::design::scaffold_state(&state_dir)?;
 
-                config::gitignore::sync_gitignore(&base, private)?;
+                combust_db::gitignore::sync_gitignore(&base, private)?;
                 if tmux {
                     let makefile_dest = base.join("Makefile.tmux");
-                    std::fs::write(&makefile_dest, include_str!("../../contrib/Makefile.tmux"))
+                    std::fs::write(&makefile_dest, include_str!("../../../contrib/Makefile.tmux"))
                         .context("writing Makefile.tmux")?;
                     println!("Wrote Makefile.tmux");
                 }
@@ -488,8 +488,8 @@ impl Cli {
 
             Commands::Edit { task_name } => {
                 let r = configure_runner()?;
-                let editor = crate::design::edit::resolve_editor()?;
-                crate::design::edit::edit_task(&r.design.path, &task_name, &editor)
+                let editor = crate::design_edit::resolve_editor()?;
+                crate::design_edit::edit_task(&r.design.path, &task_name, &editor)
             }
 
             Commands::Add { task_name } => {
@@ -500,7 +500,7 @@ impl Cli {
                 if content.trim().is_empty() {
                     anyhow::bail!("empty input — task not created");
                 }
-                crate::design::edit::add_task(&r.design.path, &task_name, &content)
+                crate::design_edit::add_task(&r.design.path, &task_name, &content)
             }
 
             Commands::Other(cmd) => {
@@ -518,9 +518,9 @@ impl Cli {
                         Ok(())
                     }
                     OtherCommands::Add { file_name } => {
-                        let editor = crate::design::edit::resolve_editor()?;
+                        let editor = crate::design_edit::resolve_editor()?;
                         let tmp = tempfile::NamedTempFile::new()?;
-                        crate::design::edit::run_editor(&editor, tmp.path())?;
+                        crate::design_edit::run_editor(&editor, tmp.path())?;
                         let content = std::fs::read_to_string(tmp.path())?;
                         if content.trim().is_empty() {
                             println!("Empty file — not created.");
@@ -536,12 +536,12 @@ impl Cli {
                         Ok(())
                     }
                     OtherCommands::Edit { file_name } => {
-                        let editor = crate::design::edit::resolve_editor()?;
+                        let editor = crate::design_edit::resolve_editor()?;
                         let path = r.design.path.join("other").join(&file_name);
                         if !path.exists() {
                             anyhow::bail!("other file {:?} not found", file_name);
                         }
-                        crate::design::edit::run_editor(&editor, &path)
+                        crate::design_edit::run_editor(&editor, &path)
                     }
                     OtherCommands::Rm { file_name } => {
                         r.design.remove_other_file(&file_name)?;
@@ -575,10 +575,10 @@ impl Cli {
                             .design
                             .find_task_by_state(
                                 &task_name,
-                                crate::design::task::TaskState::Review,
+                                combust_db::task::TaskState::Review,
                             )?;
-                        let editor = crate::design::edit::resolve_editor()?;
-                        crate::design::edit::run_editor(&editor, &task.file_path)
+                        let editor = crate::design_edit::resolve_editor()?;
+                        crate::design_edit::run_editor(&editor, &task.file_path)
                     }
                     ReviewCommands::Diff { task_name } => {
                         let diff = r.review_diff(&task_name)?;
@@ -639,10 +639,10 @@ impl Cli {
                             .design
                             .find_task_by_state(
                                 &task_name,
-                                crate::design::task::TaskState::Merge,
+                                combust_db::task::TaskState::Merge,
                             )?;
-                        let editor = crate::design::edit::resolve_editor()?;
-                        crate::design::edit::run_editor(&editor, &task.file_path)
+                        let editor = crate::design_edit::resolve_editor()?;
+                        crate::design_edit::run_editor(&editor, &task.file_path)
                     }
                     MergeCommands::Rm { task_name } => {
                         r.merge_remove(&task_name)
@@ -730,7 +730,7 @@ impl Cli {
 
             Commands::Milestone(cmd) => {
                 let r = configure_runner()?;
-                let milestones = crate::design::milestone::Milestones::new(&r.design.path);
+                let milestones = combust_db::milestone::Milestones::new(&r.design.path);
 
                 match cmd {
                     MilestoneCommands::New { date } => {
@@ -741,9 +741,9 @@ impl Cli {
                             // Simple date from timestamp.
                             format!("{}", now.as_secs())
                         });
-                        let date = crate::design::milestone::normalize_date(&date)?;
+                        let date = combust_db::milestone::normalize_date(&date)?;
 
-                        let editor = crate::design::edit::resolve_editor()?;
+                        let editor = crate::design_edit::resolve_editor()?;
                         let tmp = tempfile::NamedTempFile::new()?;
                         std::fs::write(tmp.path(), format!(
                             "# Milestone {}\n\n\
@@ -752,7 +752,7 @@ impl Cli {
                              - task-name-2\n",
                             date
                         ))?;
-                        crate::design::edit::run_editor(&editor, tmp.path())?;
+                        crate::design_edit::run_editor(&editor, tmp.path())?;
                         let content = std::fs::read_to_string(tmp.path())?;
                         if content.trim().is_empty() {
                             println!("Empty milestone — not created.");
@@ -804,8 +804,8 @@ impl Cli {
 
                     MilestoneCommands::Edit { date } => {
                         let path = milestones.path(&date)?;
-                        let editor = crate::design::edit::resolve_editor()?;
-                        crate::design::edit::run_editor(&editor, &path)
+                        let editor = crate::design_edit::resolve_editor()?;
+                        crate::design_edit::run_editor(&editor, &path)
                     }
 
                     MilestoneCommands::Verify { date } => {

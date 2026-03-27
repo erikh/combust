@@ -3,7 +3,7 @@ use std::fs;
 
 use super::document::PLAN_MODE_INSTRUCTION;
 use super::{ClaudeRunConfig, Runner};
-use crate::design::task::TaskState;
+use combust_db::task::TaskState;
 
 /// Holds a task name and its content for document assembly.
 struct TaskEntry {
@@ -43,7 +43,7 @@ impl Runner {
 
         // Prepare work directory.
         let wd = base_dir
-            .join(crate::config::COMBUST_DIR)
+            .join(combust_db::config::COMBUST_DIR)
             .join("work")
             .join("_reconcile");
         let reconcile_repo = self

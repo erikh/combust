@@ -7,17 +7,17 @@ SCRIPTS := $(wildcard $(CONTRIB_DIR)/*.py)
 all: test
 
 lint:
-	cargo check
-	cargo clippy --tests -- -D warnings
+	cargo check --workspace
+	cargo clippy --workspace --tests -- -D warnings
 
 test: lint
-	cargo test
+	cargo test --workspace
 
 build:
-	cargo build
+	cargo build --workspace
 
 install:
-	cargo install --path .
+	cargo install --path combust
 
 install-shortcuts:
 	mkdir -p $(SHORTCUT_DIR)

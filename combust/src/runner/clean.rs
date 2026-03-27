@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 
 use super::{run_shell_command, Runner};
-use crate::design::task::TaskState;
+use combust_db::task::TaskState;
 
 impl Runner {
     /// Runs the clean command in a task's work directory.

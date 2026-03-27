@@ -4,9 +4,9 @@ use super::document::{
     commit_instructions, mission_reminder, rebase_and_push_section, PLAN_MODE_INSTRUCTION,
 };
 use super::{ClaudeRunConfig, Runner};
-use crate::design::record::Record;
-use crate::design::task::TaskState;
-use crate::lock::Lock;
+use combust_db::record::Record;
+use combust_db::task::TaskState;
+use combust_db::lock::Lock;
 
 impl Runner {
     /// Full merge workflow: rebase → resolve conflicts → push → merge to main → finalize.
@@ -23,7 +23,7 @@ impl Runner {
         );
 
         // Acquire lock.
-        let lock = Lock::new(&self.config.base_dir.join(crate::config::COMBUST_DIR), &task.label());
+        let lock = Lock::new(&self.config.base_dir.join(combust_db::config::COMBUST_DIR), &task.label());
         lock.acquire()
             .with_context(|| format!("acquiring lock for task {:?}", task.label()))?;
 
@@ -111,7 +111,7 @@ impl Runner {
     }
 
     /// Lists tasks in merge state.
-    pub fn merge_list(&self) -> Result<Vec<crate::design::task::Task>> {
+    pub fn merge_list(&self) -> Result<Vec<combust_db::task::Task>> {
         self.design.tasks_by_state(TaskState::Merge)
     }
 
@@ -167,7 +167,7 @@ impl Runner {
     fn finalize_merge(
         &self,
         repo: &crate::git::Repo,
-        task: &mut crate::design::task::Task,
+        task: &mut combust_db::task::Task,
         work_dir: &std::path::Path,
     ) -> Result<()> {
         let sha = repo.last_commit_sha().context("getting merge SHA")?;
@@ -192,8 +192,8 @@ impl Runner {
 
 /// Builds the prompt for the merge workflow.
 fn assemble_merge_document(
-    design: &crate::design::Dir,
-    task: &crate::design::task::Task,
+    design: &combust_db::design::DesignDir,
+    task: &combust_db::task::Task,
     sign: bool,
     cmds: &std::collections::HashMap<String, String>,
     default_branch: &str,

@@ -6,9 +6,9 @@ use super::document::{
     verification_section, PLAN_MODE_INSTRUCTION,
 };
 use super::{ClaudeRunConfig, Runner};
-use crate::design::record::Record;
-use crate::design::task::TaskState;
-use crate::lock::Lock;
+use combust_db::record::Record;
+use combust_db::task::TaskState;
+use combust_db::lock::Lock;
 
 impl Runner {
     /// Executes the full task lifecycle: lock → branch → assemble → claude → test → commit → push → record → move to review.
@@ -24,7 +24,7 @@ impl Runner {
         );
 
         // Acquire lock.
-        let lock = Lock::new(&self.config.base_dir.join(crate::config::COMBUST_DIR), &task.label());
+        let lock = Lock::new(&self.config.base_dir.join(combust_db::config::COMBUST_DIR), &task.label());
         lock.acquire()
             .with_context(|| format!("acquiring lock for task {:?}", task.label()))?;
 
@@ -147,7 +147,7 @@ impl Runner {
     }
 
     /// Lists tasks in a group.
-    pub fn group_tasks(&self, group_name: &str) -> Result<Vec<crate::design::task::Task>> {
+    pub fn group_tasks(&self, group_name: &str) -> Result<Vec<combust_db::task::Task>> {
         self.design.group_tasks(group_name)
     }
 }

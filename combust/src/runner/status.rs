@@ -3,7 +3,7 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 
 use super::Runner;
-use crate::design::task::TaskState;
+use combust_db::task::TaskState;
 
 /// Represents the full project status.
 #[derive(Debug, Serialize)]
@@ -69,8 +69,8 @@ impl Runner {
         }
 
         // Get running tasks.
-        let combust_dir = self.config.base_dir.join(crate::config::COMBUST_DIR);
-        let running_locks = crate::lock::read_all(&combust_dir)
+        let combust_dir = self.config.base_dir.join(combust_db::config::COMBUST_DIR);
+        let running_locks = combust_db::lock::read_all(&combust_dir)
             .context("reading running tasks")?;
 
         let running: Vec<RunningTaskInfo> = running_locks
@@ -85,7 +85,7 @@ impl Runner {
     }
 
     /// Lists pending tasks.
-    pub fn list_pending(&self) -> Result<Vec<crate::design::task::Task>> {
+    pub fn list_pending(&self) -> Result<Vec<combust_db::task::Task>> {
         self.design.pending_tasks()
     }
 
@@ -118,7 +118,7 @@ impl Runner {
             &self.api_type,
             &self.gitea_url,
         )?;
-        let record = crate::design::record::Record::new(&self.design.state_path);
+        let record = combust_db::record::Record::new(&self.design.state_path);
         let (branches, issues) = crate::issues::cleanup(
             &self.design,
             &repo,

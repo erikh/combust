@@ -3,7 +3,8 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 
 use super::Runner;
-use crate::design::task::TaskState;
+use combust_db::task::TaskState;
+use combust_db::lock::process_alive;
 
 /// A detected issue that can be fixed.
 #[derive(Debug)]
@@ -90,7 +91,7 @@ impl Runner {
 
     /// Checks for stale lock files.
     fn check_stale_locks(&self, issues: &mut Vec<Issue>) -> Result<()> {
-        let combust_dir = self.config.base_dir.join(crate::config::COMBUST_DIR);
+        let combust_dir = self.config.base_dir.join(combust_db::config::COMBUST_DIR);
         let pattern = combust_dir.join("combust-*.lock");
         let pattern_str = pattern.to_string_lossy();
 
@@ -183,8 +184,8 @@ impl Runner {
     fn check_stuck_merge_tasks(&self, issues: &mut Vec<Issue>) -> Result<()> {
         let merge_tasks = self.design.tasks_by_state(TaskState::Merge)?;
         for task in &merge_tasks {
-            let combust_dir = self.config.base_dir.join(crate::config::COMBUST_DIR);
-            let lock = crate::lock::Lock::new(&combust_dir, &task.label());
+            let combust_dir = self.config.base_dir.join(combust_db::config::COMBUST_DIR);
+            let lock = combust_db::lock::Lock::new(&combust_dir, &task.label());
             if !lock.is_held() {
                 issues.push(Issue {
                     description: format!("task {:?} stuck in merge state (no active lock)", task.label()),
@@ -199,7 +200,7 @@ impl Runner {
     /// Applies automatic fixes for detected issues.
     fn apply_fixes(&self) -> Result<()> {
         // Remove stale locks.
-        let combust_dir = self.config.base_dir.join(crate::config::COMBUST_DIR);
+        let combust_dir = self.config.base_dir.join(combust_db::config::COMBUST_DIR);
         let pattern = combust_dir.join("combust-*.lock");
         let pattern_str = pattern.to_string_lossy();
 
@@ -243,8 +244,8 @@ impl Runner {
         // Move stuck merge tasks back to review.
         let merge_tasks = self.design.tasks_by_state(TaskState::Merge)?;
         for task in merge_tasks {
-            let combust_dir = self.config.base_dir.join(crate::config::COMBUST_DIR);
-            let lock = crate::lock::Lock::new(&combust_dir, &task.label());
+            let combust_dir = self.config.base_dir.join(combust_db::config::COMBUST_DIR);
+            let lock = combust_db::lock::Lock::new(&combust_dir, &task.label());
             if !lock.is_held() {
                 let mut task = task;
                 // Move from merge back — we need to use a different approach since
@@ -265,19 +266,5 @@ impl Runner {
         }
 
         Ok(())
-    }
-}
-
-fn process_alive(pid: u32) -> bool {
-    #[cfg(unix)]
-    {
-        use nix::sys::signal;
-        use nix::unistd::Pid;
-        signal::kill(Pid::from_raw(pid as i32), None).is_ok()
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = pid;
-        false
     }
 }

@@ -192,7 +192,7 @@ impl Milestones {
     pub fn verify(
         &self,
         date: &str,
-        design_dir: &super::Dir,
+        design_dir: &crate::design::DesignDir,
     ) -> Result<VerifyResult> {
         let content = self.view(date)?;
         let mut promises = self.parse_promises(&content);
@@ -201,7 +201,7 @@ impl Milestones {
 
         // Get completed tasks.
         let completed = design_dir
-            .tasks_by_state(super::task::TaskState::Completed)?;
+            .tasks_by_state(crate::task::TaskState::Completed)?;
         let completed_labels: std::collections::HashSet<String> =
             completed.iter().map(|t| t.label()).collect();
         let completed_names: std::collections::HashSet<String> =
@@ -230,7 +230,7 @@ impl Milestones {
     pub fn repair(
         &self,
         date: &str,
-        design_dir: &super::Dir,
+        design_dir: &crate::design::DesignDir,
     ) -> Result<RepairResult> {
         let content = self.view(date)?;
         let promises = self.parse_promises(&content);
@@ -485,12 +485,12 @@ mod tests {
         (tmp, ms)
     }
 
-    fn setup_with_design() -> (TempDir, Milestones, super::super::Dir) {
+    fn setup_with_design() -> (TempDir, Milestones, crate::design::DesignDir) {
         let tmp = TempDir::new().unwrap();
-        super::super::scaffold(tmp.path()).unwrap();
+        crate::design::scaffold(tmp.path()).unwrap();
         let ms = Milestones::new(tmp.path());
         let state_path = tmp.path().join("state");
-        let dir = super::super::Dir::new(tmp.path(), &state_path).unwrap();
+        let dir = crate::design::DesignDir::new(tmp.path(), &state_path).unwrap();
         (tmp, ms, dir)
     }
 

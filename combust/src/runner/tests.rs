@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod verify_tests {
-    use crate::config::Config;
-    use crate::design;
+    use combust_db::config::Config;
+    use combust_db::design;
     use crate::runner::verify::assemble_verify_document;
     use crate::runner::{ClaudeRunConfig, Runner};
     use std::collections::HashMap;
@@ -57,7 +57,7 @@ mod verify_tests {
         let config = Config {
             source_repo_url: String::new(),
             private: false,
-            theme: crate::config::DEFAULT_THEME.to_string(),
+            theme: combust_db::config::DEFAULT_THEME.to_string(),
             base_dir: base_dir.clone(),
             state_dir_override: Some(state_dir.clone()),
         };
@@ -86,7 +86,7 @@ mod verify_tests {
         env: &TestEnv,
         claude_fn: Box<dyn Fn(ClaudeRunConfig) -> anyhow::Result<()> + Send + Sync>,
     ) -> Runner {
-        let dd = crate::design::Dir::new(&env.design_dir, &env.state_dir).unwrap();
+        let dd = combust_db::design::DesignDir::new(&env.design_dir, &env.state_dir).unwrap();
         Runner {
             config: env.config.clone(),
             design: dd,
@@ -133,7 +133,7 @@ mod verify_tests {
     #[test]
     fn test_verify_document_contains_mission() {
         let env = setup_test_env();
-        let dd = crate::design::Dir::new(&env.design_dir, &env.state_dir).unwrap();
+        let dd = combust_db::design::DesignDir::new(&env.design_dir, &env.state_dir).unwrap();
         let doc =
             assemble_verify_document(&dd, "Tests must pass.", false, &HashMap::new()).unwrap();
         assert!(doc.contains("# Mission"));
@@ -142,7 +142,7 @@ mod verify_tests {
     #[test]
     fn test_verify_document_contains_verification_instructions() {
         let env = setup_test_env();
-        let dd = crate::design::Dir::new(&env.design_dir, &env.state_dir).unwrap();
+        let dd = combust_db::design::DesignDir::new(&env.design_dir, &env.state_dir).unwrap();
         let doc =
             assemble_verify_document(&dd, "Tests must pass.", false, &HashMap::new()).unwrap();
         assert!(doc.contains("1. Find the relevant code"));
@@ -155,7 +155,7 @@ mod verify_tests {
     #[test]
     fn test_verify_document_contains_rules_and_lint() {
         let env = setup_test_env();
-        let dd = crate::design::Dir::new(&env.design_dir, &env.state_dir).unwrap();
+        let dd = combust_db::design::DesignDir::new(&env.design_dir, &env.state_dir).unwrap();
         let doc =
             assemble_verify_document(&dd, "Tests must pass.", false, &HashMap::new()).unwrap();
 
@@ -175,7 +175,7 @@ mod verify_tests {
     #[test]
     fn test_verify_document_contains_functional_spec() {
         let env = setup_test_env();
-        let dd = crate::design::Dir::new(&env.design_dir, &env.state_dir).unwrap();
+        let dd = combust_db::design::DesignDir::new(&env.design_dir, &env.state_dir).unwrap();
         let doc =
             assemble_verify_document(&dd, "Tests must pass.", false, &HashMap::new()).unwrap();
         assert!(doc.contains("# Functional Specification"));
@@ -185,7 +185,7 @@ mod verify_tests {
     #[test]
     fn test_verify_document_contains_commit_instructions() {
         let env = setup_test_env();
-        let dd = crate::design::Dir::new(&env.design_dir, &env.state_dir).unwrap();
+        let dd = combust_db::design::DesignDir::new(&env.design_dir, &env.state_dir).unwrap();
         let doc =
             assemble_verify_document(&dd, "Tests must pass.", false, &HashMap::new()).unwrap();
         assert!(doc.contains("# Commit Instructions"));
@@ -194,7 +194,7 @@ mod verify_tests {
     #[test]
     fn test_verify_document_contains_final_sync() {
         let env = setup_test_env();
-        let dd = crate::design::Dir::new(&env.design_dir, &env.state_dir).unwrap();
+        let dd = combust_db::design::DesignDir::new(&env.design_dir, &env.state_dir).unwrap();
         let doc =
             assemble_verify_document(&dd, "Tests must pass.", false, &HashMap::new()).unwrap();
         assert!(doc.contains("# Final Sync"));
@@ -203,7 +203,7 @@ mod verify_tests {
     #[test]
     fn test_verify_document_contains_pass_fail_files() {
         let env = setup_test_env();
-        let dd = crate::design::Dir::new(&env.design_dir, &env.state_dir).unwrap();
+        let dd = combust_db::design::DesignDir::new(&env.design_dir, &env.state_dir).unwrap();
         let doc =
             assemble_verify_document(&dd, "Tests must pass.", false, &HashMap::new()).unwrap();
         assert!(doc.contains("verify-passed.txt"));
@@ -213,7 +213,7 @@ mod verify_tests {
     #[test]
     fn test_verify_document_spec_is_authoritative() {
         let env = setup_test_env();
-        let dd = crate::design::Dir::new(&env.design_dir, &env.state_dir).unwrap();
+        let dd = combust_db::design::DesignDir::new(&env.design_dir, &env.state_dir).unwrap();
         let doc =
             assemble_verify_document(&dd, "Tests must pass.", false, &HashMap::new()).unwrap();
         assert!(doc.contains("fix the code"));
@@ -223,7 +223,7 @@ mod verify_tests {
     #[test]
     fn test_verify_document_serial_tests() {
         let env = setup_test_env();
-        let dd = crate::design::Dir::new(&env.design_dir, &env.state_dir).unwrap();
+        let dd = combust_db::design::DesignDir::new(&env.design_dir, &env.state_dir).unwrap();
         let doc =
             assemble_verify_document(&dd, "Tests must pass.", false, &HashMap::new()).unwrap();
         assert!(doc.contains("serially"));
@@ -232,7 +232,7 @@ mod verify_tests {
     #[test]
     fn test_verify_document_ends_with_plan_mode() {
         let env = setup_test_env();
-        let dd = crate::design::Dir::new(&env.design_dir, &env.state_dir).unwrap();
+        let dd = combust_db::design::DesignDir::new(&env.design_dir, &env.state_dir).unwrap();
         let doc =
             assemble_verify_document(&dd, "Tests must pass.", false, &HashMap::new()).unwrap();
         assert!(doc.trim_end().ends_with("plan mode immediately."));
@@ -241,7 +241,7 @@ mod verify_tests {
     #[test]
     fn test_verify_document_test_coverage() {
         let env = setup_test_env();
-        let dd = crate::design::Dir::new(&env.design_dir, &env.state_dir).unwrap();
+        let dd = combust_db::design::DesignDir::new(&env.design_dir, &env.state_dir).unwrap();
         let doc =
             assemble_verify_document(&dd, "Tests must pass.", false, &HashMap::new()).unwrap();
         assert!(doc.contains("test coverage"));
@@ -250,9 +250,9 @@ mod verify_tests {
 
 #[cfg(test)]
 mod reconcile_tests {
-    use crate::config::Config;
-    use crate::design;
-    use crate::design::task::TaskState;
+    use combust_db::config::Config;
+    use combust_db::design;
+    use combust_db::task::TaskState;
     use crate::runner::reconcile::{assemble_reconcile_document_pub, TaskEntryPublic};
     use crate::runner::{ClaudeRunConfig, Runner};
     use std::fs;
@@ -307,7 +307,7 @@ mod reconcile_tests {
         let config = Config {
             source_repo_url: String::new(),
             private: false,
-            theme: crate::config::DEFAULT_THEME.to_string(),
+            theme: combust_db::config::DEFAULT_THEME.to_string(),
             base_dir: base_dir.clone(),
             state_dir_override: Some(state_dir.clone()),
         };
@@ -336,7 +336,7 @@ mod reconcile_tests {
         env: &TestEnv,
         claude_fn: Box<dyn Fn(ClaudeRunConfig) -> anyhow::Result<()> + Send + Sync>,
     ) -> Runner {
-        let dd = crate::design::Dir::new(&env.design_dir, &env.state_dir).unwrap();
+        let dd = combust_db::design::DesignDir::new(&env.design_dir, &env.state_dir).unwrap();
         Runner {
             config: env.config.clone(),
             design: dd,
@@ -473,7 +473,7 @@ mod reconcile_tests {
         )
         .unwrap();
 
-        let dd = crate::design::Dir::new(&env.design_dir, &env.state_dir).unwrap();
+        let dd = combust_db::design::DesignDir::new(&env.design_dir, &env.state_dir).unwrap();
         let completed = dd.tasks_by_state(TaskState::Completed).unwrap();
         assert_eq!(completed.len(), 1);
 
@@ -487,8 +487,8 @@ mod reconcile_tests {
 
 #[cfg(test)]
 mod runner_integration_tests {
-    use crate::config::Config;
-    use crate::design;
+    use combust_db::config::Config;
+    use combust_db::design;
     use crate::runner::document::{
         commit_instructions, conflict_resolution_section, mission_reminder,
         notification_section, rebase_and_push_section, timeout_section,
@@ -554,7 +554,7 @@ mod runner_integration_tests {
         let config = Config {
             source_repo_url: String::new(),
             private: false,
-            theme: crate::config::DEFAULT_THEME.to_string(),
+            theme: combust_db::config::DEFAULT_THEME.to_string(),
             base_dir: base_dir.clone(),
             state_dir_override: Some(state_dir.clone()),
         };
@@ -583,7 +583,7 @@ mod runner_integration_tests {
         env: &TestEnv,
         claude_fn: Box<dyn Fn(ClaudeRunConfig) -> anyhow::Result<()> + Send + Sync>,
     ) -> Runner {
-        let dd = crate::design::Dir::new(&env.design_dir, &env.state_dir).unwrap();
+        let dd = combust_db::design::DesignDir::new(&env.design_dir, &env.state_dir).unwrap();
         Runner {
             config: env.config.clone(),
             design: dd,

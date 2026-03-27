@@ -124,12 +124,13 @@ pub fn read_all(combust_dir: &Path) -> Result<Vec<RunningTask>> {
     Ok(running)
 }
 
-fn process_alive(pid: u32) -> bool {
+/// Returns true if a process with the given PID is alive.
+pub fn process_alive(pid: u32) -> bool {
     #[cfg(unix)]
     {
-        use nix::sys::signal;
-        use nix::unistd::Pid;
-        signal::kill(Pid::from_raw(pid as i32), None).is_ok()
+        // Use libc::kill with signal 0 to check if the process exists
+        // without sending an actual signal.
+        unsafe { libc::kill(pid as i32, 0) == 0 }
     }
     #[cfg(not(unix))]
     {

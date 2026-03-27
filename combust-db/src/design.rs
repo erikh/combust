@@ -1,13 +1,8 @@
-pub mod edit;
-pub mod milestone;
-pub mod record;
-pub mod task;
-
 use anyhow::{bail, Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use task::{Task, TaskState};
+use crate::task::{Task, TaskState};
 
 /// Default content for a new combust.yml.
 pub const DEFAULT_COMBUST_YML: &str = r#"# Commands that Claude runs before committing.
@@ -37,12 +32,12 @@ Stay focused.\n\n";
 
 /// Represents a design directory containing rules, lint, functional specs, and tasks.
 #[derive(Debug, Clone)]
-pub struct Dir {
+pub struct DesignDir {
     pub path: PathBuf,
     pub state_path: PathBuf,
 }
 
-impl Dir {
+impl DesignDir {
     /// Opens and validates a design directory at the given path.
     pub fn new(path: &Path, state_path: &Path) -> Result<Self> {
         let abs = fs::canonicalize(path)
@@ -57,7 +52,7 @@ impl Dir {
             .or_else(|_| Ok::<PathBuf, std::io::Error>(state_path.to_path_buf()))
             .context("resolving state dir")?;
 
-        Ok(Dir {
+        Ok(DesignDir {
             path: abs,
             state_path: abs_state,
         })
@@ -164,7 +159,12 @@ impl Dir {
             .to_string_lossy()
             .to_string();
         let dest_path = dest_dir.join(&file_name);
-        fs::rename(&task.file_path, &dest_path).context("moving task file")?;
+        // Use rename when possible, but fall back to copy+remove for cross-device moves
+        // (rename fails with EXDEV when source and destination are on different filesystems).
+        if fs::rename(&task.file_path, &dest_path).is_err() {
+            fs::copy(&task.file_path, &dest_path).context("copying task file (cross-device)")?;
+            fs::remove_file(&task.file_path).context("removing original task file")?;
+        }
 
         task.file_path = dest_path;
         task.state = new_state;
@@ -432,11 +432,11 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    fn setup_design_dir() -> (TempDir, Dir) {
+    fn setup_design_dir() -> (TempDir, DesignDir) {
         let tmp = TempDir::new().unwrap();
         scaffold(tmp.path()).unwrap();
         let state_path = tmp.path().join("state");
-        let dir = Dir::new(tmp.path(), &state_path).unwrap();
+        let dir = DesignDir::new(tmp.path(), &state_path).unwrap();
         (tmp, dir)
     }
 
@@ -501,7 +501,7 @@ mod tests {
         scaffold_design(&design_dir).unwrap();
         scaffold_state(&state_dir).unwrap();
 
-        let dir = Dir::new(&design_dir, &state_dir).unwrap();
+        let dir = DesignDir::new(&design_dir, &state_dir).unwrap();
 
         // Create a pending task
         fs::write(dir.path.join("tasks/my-task.md"), "Content").unwrap();
@@ -539,13 +539,13 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let state_dir = tmp.path().join("state");
         fs::create_dir_all(&state_dir).unwrap();
-        let dir = Dir::new(tmp.path(), &state_dir);
+        let dir = DesignDir::new(tmp.path(), &state_dir);
         assert!(dir.is_ok());
     }
 
     #[test]
     fn test_new_dir_not_exist() {
-        let result = Dir::new(
+        let result = DesignDir::new(
             std::path::Path::new("/nonexistent/path/that/does/not/exist"),
             std::path::Path::new("/nonexistent/state"),
         );
@@ -559,7 +559,7 @@ mod tests {
         fs::write(&file_path, "content").unwrap();
         let state_dir = tmp.path().join("state");
         fs::create_dir_all(&state_dir).unwrap();
-        let result = Dir::new(&file_path, &state_dir);
+        let result = DesignDir::new(&file_path, &state_dir);
         assert!(result.is_err());
     }
 
@@ -590,7 +590,7 @@ mod tests {
         let state_dir = tmp.path().join("state");
         fs::create_dir_all(&state_dir).unwrap();
         // Don't scaffold - just create the bare directory.
-        let dir = Dir::new(tmp.path(), &state_dir).unwrap();
+        let dir = DesignDir::new(tmp.path(), &state_dir).unwrap();
         assert_eq!(dir.rules().unwrap(), "");
         assert_eq!(dir.lint().unwrap(), "");
         assert_eq!(dir.functional().unwrap(), "");
@@ -626,7 +626,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let state_dir = tmp.path().join("state");
         fs::create_dir_all(&state_dir).unwrap();
-        let dir = Dir::new(tmp.path(), &state_dir).unwrap();
+        let dir = DesignDir::new(tmp.path(), &state_dir).unwrap();
         // No rules.md, lint.md, or functional.md exist.
         let doc = dir.assemble_document("Do the thing", "").unwrap();
 
@@ -678,7 +678,7 @@ mod tests {
         let state_dir = tmp.path().join("state");
         fs::create_dir_all(&state_dir).unwrap();
         // No tasks/ dir at all.
-        let dir = Dir::new(tmp.path(), &state_dir).unwrap();
+        let dir = DesignDir::new(tmp.path(), &state_dir).unwrap();
         let tasks = dir.pending_tasks().unwrap();
         assert!(tasks.is_empty());
     }
@@ -809,6 +809,59 @@ mod tests {
     }
 
     #[test]
+    fn test_move_task_cross_device_fallback() {
+        // Use separate TempDirs for design and state to exercise the copy+remove
+        // fallback path (mirrors real XDG layout where state may be on a different device).
+        let design_tmp = TempDir::new().unwrap();
+        let state_tmp = TempDir::new().unwrap();
+
+        scaffold_design(design_tmp.path()).unwrap();
+        scaffold_state(state_tmp.path()).unwrap();
+
+        let dir = DesignDir::new(design_tmp.path(), state_tmp.path()).unwrap();
+
+        let task_content = "Cross-device task content";
+        fs::write(dir.path.join("tasks/xdev-task.md"), task_content).unwrap();
+
+        let mut task = dir.find_task("xdev-task").unwrap();
+        dir.move_task(&mut task, TaskState::Review).unwrap();
+
+        // Task should be in the new location with content preserved.
+        assert_eq!(task.state, TaskState::Review);
+        assert!(task.file_path.exists());
+        assert!(!design_tmp.path().join("tasks/xdev-task.md").exists());
+        assert!(state_tmp.path().join("review/xdev-task.md").exists());
+
+        let moved_content = fs::read_to_string(&task.file_path).unwrap();
+        assert_eq!(moved_content, task_content);
+    }
+
+    #[test]
+    fn test_move_task_cross_device_grouped() {
+        let design_tmp = TempDir::new().unwrap();
+        let state_tmp = TempDir::new().unwrap();
+
+        scaffold_design(design_tmp.path()).unwrap();
+        scaffold_state(state_tmp.path()).unwrap();
+
+        let dir = DesignDir::new(design_tmp.path(), state_tmp.path()).unwrap();
+
+        fs::create_dir_all(dir.path.join("tasks/mygrp")).unwrap();
+        fs::write(dir.path.join("tasks/mygrp/grouped.md"), "Grouped content").unwrap();
+
+        let mut task = dir.find_task("mygrp/grouped").unwrap();
+        dir.move_task(&mut task, TaskState::Review).unwrap();
+
+        assert_eq!(task.state, TaskState::Review);
+        assert_eq!(task.group, "mygrp");
+        assert!(state_tmp.path().join("review/mygrp/grouped.md").exists());
+        assert!(!design_tmp.path().join("tasks/mygrp/grouped.md").exists());
+
+        let content = fs::read_to_string(&task.file_path).unwrap();
+        assert_eq!(content, "Grouped content");
+    }
+
+    #[test]
     fn test_move_task_to_pending_rejected() {
         let (_tmp, dir) = setup_design_dir();
         fs::write(dir.path.join("tasks/t.md"), "Task").unwrap();
@@ -859,7 +912,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let state_dir = tmp.path().join("state");
         fs::create_dir_all(&state_dir).unwrap();
-        let dir = Dir::new(tmp.path(), &state_dir).unwrap();
+        let dir = DesignDir::new(tmp.path(), &state_dir).unwrap();
         let files = dir.other_files().unwrap();
         assert!(files.is_empty());
     }
@@ -910,7 +963,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let state_dir = tmp.path().join("state");
         fs::create_dir_all(&state_dir).unwrap();
-        let dir = Dir::new(tmp.path(), &state_dir).unwrap();
+        let dir = DesignDir::new(tmp.path(), &state_dir).unwrap();
         // No other/ directory exists — should return empty.
         let files = dir.other_files().unwrap();
         assert!(files.is_empty());
