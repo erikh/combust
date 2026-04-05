@@ -140,6 +140,7 @@ impl Runner {
         );
 
         let repo = crate::git::Repo::open(&work_dir);
+        repo.pull().context("pulling repository")?;
         let default_branch = self.detect_default_branch(&repo)?;
         repo.diff(&format!("origin/{}", default_branch))
     }

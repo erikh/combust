@@ -46,6 +46,20 @@ impl Repo {
         Ok(())
     }
 
+    /// Pulls the current branch from origin (fetch + fast-forward merge).
+    /// If the fast-forward merge fails (e.g., local branch has diverged),
+    /// the fetch has still updated remote refs so worktree creation will
+    /// use the latest code.
+    pub fn pull(&self) -> Result<()> {
+        self.fetch()?;
+        let branch = self.current_branch()?;
+        let remote_ref = format!("origin/{}", branch);
+        if self.branch_exists(&remote_ref) {
+            let _ = self.merge_ff_only(&remote_ref);
+        }
+        Ok(())
+    }
+
     /// Returns the remote URL for origin.
     pub fn remote_url(&self) -> Result<String> {
         let output = run_git(&self.dir, &["remote", "get-url", "origin"])?;
@@ -167,6 +181,13 @@ impl Repo {
             &self.dir,
             &["worktree", "remove", "--force", &path.to_string_lossy()],
         )?;
+        Ok(())
+    }
+
+    /// Prunes stale worktree entries (e.g., after a worktree directory was
+    /// deleted without `git worktree remove`).
+    pub fn worktree_prune(&self) -> Result<()> {
+        run_git(&self.dir, &["worktree", "prune"])?;
         Ok(())
     }
 
@@ -443,6 +464,44 @@ mod tests {
     fn test_fetch_with_remote() {
         let (_bare, _work, repo) = setup_bare_remote();
         repo.fetch().unwrap();
+    }
+
+    #[test]
+    fn test_pull() {
+        let (bare_tmp, _work, repo) = setup_bare_remote();
+
+        // Clone a second copy, commit, and push — simulating upstream changes.
+        let other_tmp = TempDir::new().unwrap();
+        let other_path = other_tmp.path().join("other");
+        Repo::clone_repo(&bare_tmp.path().to_string_lossy(), &other_path).unwrap();
+        run_git(&other_path, &["config", "user.email", "test@test.com"]).unwrap();
+        run_git(&other_path, &["config", "user.name", "Test"]).unwrap();
+        run_git(&other_path, &["config", "commit.gpgsign", "false"]).unwrap();
+        fs::write(other_path.join("upstream.txt"), "upstream change").unwrap();
+        run_git(&other_path, &["add", "-A"]).unwrap();
+        run_git(&other_path, &["commit", "-m", "upstream commit"]).unwrap();
+        run_git(&other_path, &["push", "origin", "main"]).unwrap();
+
+        // Our repo should not have the upstream commit yet.
+        let before = repo.last_commit_sha().unwrap();
+
+        // Pull should fast-forward to the upstream commit.
+        repo.pull().unwrap();
+        let after = repo.last_commit_sha().unwrap();
+        assert_ne!(before, after);
+        assert!(repo.dir.join("upstream.txt").exists());
+    }
+
+    #[test]
+    fn test_pull_no_remote_branch() {
+        let (_bare, _work, repo) = setup_bare_remote();
+
+        // Create a local-only branch.
+        repo.create_branch("local-only").unwrap();
+
+        // Pull should succeed (fetch works, ff-only is skipped since no upstream).
+        repo.pull().unwrap();
+        assert_eq!(repo.current_branch().unwrap(), "local-only");
     }
 
     #[test]

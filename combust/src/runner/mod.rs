@@ -212,11 +212,19 @@ impl Runner {
     }
 
     /// Prepares the work directory for a task using git worktrees.
+    /// Pulls the main repository before every operation to ensure worktrees
+    /// start from the latest upstream state.
     pub fn prepare_repo(&self, work_dir: &Path, branch_name: &str) -> Result<Repo> {
+        // Pull the main repo so local branches and refs are current.
+        let main_repo = Repo::open(&self.config.base_dir);
+        if let Err(e) = main_repo.pull() {
+            eprintln!("Warning: could not pull main repository: {}", e);
+        }
+
         // Try to reuse existing work directory.
         if work_dir.is_dir() && Repo::is_git_repo(work_dir) {
             let repo = Repo::open(work_dir);
-            if repo.fetch().is_ok() {
+            if repo.pull().is_ok() {
                 return Ok(repo);
             }
             eprintln!(
@@ -227,25 +235,24 @@ impl Runner {
             if let Some(ref cmds) = self.commands {
                 cmds.run_teardown(work_dir);
             }
-            let main_repo = Repo::open(&self.config.base_dir);
             let _ = main_repo.worktree_remove(work_dir);
             let _ = fs::remove_dir_all(work_dir);
         } else if work_dir.is_dir() {
-            // Directory exists but not a git repo.
+            // Directory exists but not a git repo — may be a stale worktree.
             if let Some(ref cmds) = self.commands {
                 cmds.run_teardown(work_dir);
             }
+            let _ = main_repo.worktree_remove(work_dir);
             let _ = fs::remove_dir_all(work_dir);
         }
+
+        // Prune any stale worktree registrations left over from cleanup.
+        let _ = main_repo.worktree_prune();
 
         // Create parent directories.
         if let Some(parent) = work_dir.parent() {
             fs::create_dir_all(parent).context("creating work dir parent")?;
         }
-
-        // Open the main repo and create a worktree.
-        let main_repo = Repo::open(&self.config.base_dir);
-        let _ = main_repo.fetch();
 
         if main_repo.branch_exists(branch_name) {
             main_repo

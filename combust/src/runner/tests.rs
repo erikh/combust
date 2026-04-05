@@ -1056,4 +1056,284 @@ mod runner_integration_tests {
         assert!(args.contains(&"plan".to_string()));
         assert!(args.contains(&"my prompt".to_string()));
     }
+
+    /// Test environment backed by a bare remote, so fetch/pull/worktree work.
+    struct RemoteTestEnv {
+        _bare: TempDir,
+        _work: TempDir,
+        base_dir: PathBuf,
+        design_dir: PathBuf,
+        state_dir: PathBuf,
+        config: Config,
+    }
+
+    fn run_git(dir: &std::path::Path, args: &[&str]) -> String {
+        let out = std::process::Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "git {} failed: {}", args.join(" "), String::from_utf8_lossy(&out.stderr));
+        String::from_utf8_lossy(&out.stdout).to_string()
+    }
+
+    fn setup_remote_test_env() -> RemoteTestEnv {
+        // Create a bare remote.
+        let bare = TempDir::new().unwrap();
+        run_git(bare.path(), &["init", "--bare"]);
+
+        // Create a working clone.
+        let work = TempDir::new().unwrap();
+        let base_dir = work.path().join("repo");
+        run_git(work.path(), &["clone", &bare.path().to_string_lossy(), "repo"]);
+        run_git(&base_dir, &["config", "user.email", "test@test.com"]);
+        run_git(&base_dir, &["config", "user.name", "Test"]);
+        run_git(&base_dir, &["config", "commit.gpgsign", "false"]);
+
+        // Ensure main branch.
+        let _ = std::process::Command::new("git")
+            .args(["branch", "-M", "main"])
+            .current_dir(&base_dir)
+            .output();
+
+        // Set up combust directories and design files.
+        let combust_dir = base_dir.join(".combust");
+        let design_dir = combust_dir.join("design");
+        let state_dir = base_dir.join("test-state");
+        fs::create_dir_all(combust_dir.join("work")).unwrap();
+        fs::create_dir_all(&design_dir).unwrap();
+
+        design::scaffold_design(&design_dir).unwrap();
+        design::scaffold_state(&state_dir).unwrap();
+        fs::write(design_dir.join("rules.md"), "Follow best practices.").unwrap();
+        fs::write(design_dir.join("lint.md"), "").unwrap();
+        fs::write(design_dir.join("functional.md"), "").unwrap();
+        fs::write(design_dir.join("tasks/my-task.md"), "Implement my task.").unwrap();
+
+        // Commit and push.
+        run_git(&base_dir, &["add", "-A"]);
+        run_git(&base_dir, &["commit", "-m", "initial"]);
+        run_git(&base_dir, &["push", "-u", "origin", "main"]);
+
+        let config = Config {
+            source_repo_url: String::new(),
+            private: false,
+            theme: combust_db::config::DEFAULT_THEME.to_string(),
+            base_dir: base_dir.clone(),
+            state_dir_override: Some(state_dir.clone()),
+        };
+
+        RemoteTestEnv {
+            _bare: bare,
+            _work: work,
+            base_dir,
+            design_dir,
+            state_dir,
+            config,
+        }
+    }
+
+    fn make_remote_runner(env: &RemoteTestEnv) -> Runner {
+        let dd = combust_db::design::DesignDir::new(&env.design_dir, &env.state_dir).unwrap();
+        Runner {
+            config: env.config.clone(),
+            design: dd,
+            claude: Some(Box::new(|_| Ok(()))),
+            base_dir: env.base_dir.clone(),
+            model: String::new(),
+            auto_accept: false,
+            force_tui: false,
+            rebase: true,
+            notify: false,
+            commands: None,
+            api_type: String::new(),
+            gitea_url: String::new(),
+            timeout: None,
+        }
+    }
+
+    /// Simulate an upstream commit by cloning the bare remote, committing,
+    /// and pushing. Returns the new commit SHA.
+    fn push_upstream_commit(bare_path: &std::path::Path, filename: &str) -> String {
+        let tmp = TempDir::new().unwrap();
+        let clone_path = tmp.path().join("upstream");
+        run_git(tmp.path(), &["clone", &bare_path.to_string_lossy(), "upstream"]);
+        run_git(&clone_path, &["config", "user.email", "test@test.com"]);
+        run_git(&clone_path, &["config", "user.name", "Test"]);
+        run_git(&clone_path, &["config", "commit.gpgsign", "false"]);
+        fs::write(clone_path.join(filename), "upstream data").unwrap();
+        run_git(&clone_path, &["add", "-A"]);
+        run_git(&clone_path, &["commit", "-m", &format!("add {}", filename)]);
+        run_git(&clone_path, &["push", "origin", "main"]);
+        run_git(&clone_path, &["rev-parse", "HEAD"]).trim().to_string()
+    }
+
+    #[test]
+    fn test_prepare_repo_pulls_main_before_worktree() {
+        let env = setup_remote_test_env();
+        let r = make_remote_runner(&env);
+
+        // Push an upstream commit that our local main doesn't have.
+        let upstream_sha = push_upstream_commit(env._bare.path(), "upstream.txt");
+
+        // Before prepare_repo, local main should NOT have the upstream commit.
+        let local_sha = run_git(&env.base_dir, &["rev-parse", "HEAD"]).trim().to_string();
+        assert_ne!(local_sha, upstream_sha);
+
+        // prepare_repo should pull main first, then create the worktree.
+        let work_dir = env.base_dir.join(".combust/work/test-wt");
+        let repo = r.prepare_repo(&work_dir, "combust/test-branch").unwrap();
+
+        // The main repo should now have the upstream commit.
+        let updated_sha = run_git(&env.base_dir, &["rev-parse", "HEAD"]).trim().to_string();
+        assert_eq!(updated_sha, upstream_sha);
+
+        // The worktree should also have the upstream file (branched from updated main).
+        assert!(work_dir.join("upstream.txt").exists());
+
+        // Clean up worktree.
+        let main_repo = crate::git::Repo::open(&env.base_dir);
+        let _ = main_repo.worktree_remove(&work_dir);
+        let _ = main_repo.delete_branch("combust/test-branch");
+        drop(repo);
+    }
+
+    #[test]
+    fn test_prepare_repo_pulls_reused_worktree() {
+        let env = setup_remote_test_env();
+        let r = make_remote_runner(&env);
+
+        let work_dir = env.base_dir.join(".combust/work/reuse-wt");
+
+        // First call: create the worktree.
+        let repo = r.prepare_repo(&work_dir, "combust/reuse-branch").unwrap();
+
+        // Commit something on the worktree branch and push it.
+        fs::write(work_dir.join("feature.txt"), "feature").unwrap();
+        repo.add_all().unwrap();
+        repo.commit("feature commit", false).unwrap();
+        repo.push("combust/reuse-branch").unwrap();
+        let pushed_sha = repo.last_commit_sha().unwrap();
+
+        // Simulate the worktree being behind by resetting it back.
+        let main_repo = crate::git::Repo::open(&env.base_dir);
+        let initial_sha = run_git(&env.base_dir, &["rev-parse", "HEAD"]).trim().to_string();
+        run_git(&work_dir, &["reset", "--hard", &initial_sha]);
+        let reset_sha = run_git(&work_dir, &["rev-parse", "HEAD"]).trim().to_string();
+        assert_ne!(reset_sha, pushed_sha);
+
+        // Second call: reuse should pull and fast-forward to the pushed commit.
+        let repo2 = r.prepare_repo(&work_dir, "combust/reuse-branch").unwrap();
+        let reused_sha = repo2.last_commit_sha().unwrap();
+        assert_eq!(reused_sha, pushed_sha, "reused worktree should be pulled to latest");
+
+        // Clean up.
+        let _ = main_repo.worktree_remove(&work_dir);
+        let _ = main_repo.delete_branch("combust/reuse-branch");
+        drop(repo2);
+    }
+
+    #[test]
+    fn test_prepare_repo_existing_branch_uses_worktree_add_existing() {
+        let env = setup_remote_test_env();
+        let r = make_remote_runner(&env);
+
+        // Create a branch and push it so it exists on the remote.
+        run_git(&env.base_dir, &["checkout", "-b", "combust/existing-task"]);
+        fs::write(env.base_dir.join("existing.txt"), "existing").unwrap();
+        run_git(&env.base_dir, &["add", "-A"]);
+        run_git(&env.base_dir, &["commit", "-m", "existing branch commit"]);
+        run_git(&env.base_dir, &["push", "-u", "origin", "combust/existing-task"]);
+        run_git(&env.base_dir, &["checkout", "main"]);
+
+        // prepare_repo should detect the existing branch and use worktree_add_existing.
+        let work_dir = env.base_dir.join(".combust/work/existing-wt");
+        let repo = r.prepare_repo(&work_dir, "combust/existing-task").unwrap();
+
+        // The worktree should be on the existing branch with its file.
+        assert!(work_dir.join("existing.txt").exists());
+        let branch = repo.current_branch().unwrap();
+        assert_eq!(branch, "combust/existing-task");
+
+        // Clean up.
+        let main_repo = crate::git::Repo::open(&env.base_dir);
+        let _ = main_repo.worktree_remove(&work_dir);
+        drop(repo);
+    }
+
+    #[test]
+    fn test_prepare_repo_broken_worktree_gets_recreated() {
+        let env = setup_remote_test_env();
+        let r = make_remote_runner(&env);
+
+        let work_dir = env.base_dir.join(".combust/work/broken-wt");
+
+        // First call: create a valid worktree.
+        let repo = r.prepare_repo(&work_dir, "combust/broken-branch").unwrap();
+        assert!(work_dir.join(".git").exists());
+        drop(repo);
+
+        // Corrupt the worktree by removing .git so pull will fail.
+        fs::remove_file(work_dir.join(".git")).unwrap();
+        // It's now a directory that exists but is not a git repo.
+
+        // Second call: should clean up the broken dir and recreate.
+        let repo2 = r.prepare_repo(&work_dir, "combust/broken-branch").unwrap();
+        assert!(work_dir.join(".git").exists());
+        let branch = repo2.current_branch().unwrap();
+        assert_eq!(branch, "combust/broken-branch");
+
+        // Clean up.
+        let main_repo = crate::git::Repo::open(&env.base_dir);
+        let _ = main_repo.worktree_remove(&work_dir);
+        drop(repo2);
+    }
+
+    #[test]
+    fn test_prepare_repo_non_git_dir_gets_cleaned_and_recreated() {
+        let env = setup_remote_test_env();
+        let r = make_remote_runner(&env);
+
+        // Create a non-git directory where the worktree should go.
+        let work_dir = env.base_dir.join(".combust/work/non-git-wt");
+        fs::create_dir_all(&work_dir).unwrap();
+        fs::write(work_dir.join("junk.txt"), "junk").unwrap();
+
+        // prepare_repo should remove the junk dir and create a real worktree.
+        let repo = r.prepare_repo(&work_dir, "combust/clean-branch").unwrap();
+        assert!(work_dir.join(".git").exists());
+        // The junk file should be gone (dir was removed and recreated).
+        assert!(!work_dir.join("junk.txt").exists());
+
+        let branch = repo.current_branch().unwrap();
+        assert_eq!(branch, "combust/clean-branch");
+
+        // Clean up.
+        let main_repo = crate::git::Repo::open(&env.base_dir);
+        let _ = main_repo.worktree_remove(&work_dir);
+        drop(repo);
+    }
+
+    #[test]
+    fn test_prepare_repo_tolerates_no_remote() {
+        // The existing setup_test_env() has no remote — prepare_repo should
+        // warn but not fail.
+        let env = setup_test_env();
+        let r = make_runner(&env, Box::new(|_| Ok(())));
+
+        let work_dir = env.base_dir.join(".combust/work/no-remote-wt");
+        // This will fail at worktree creation (no remote branch to track),
+        // but it should NOT fail at the pull step.
+        let result = r.prepare_repo(&work_dir, "combust/no-remote");
+        // The worktree add may fail, but the error should be about the
+        // worktree, not about pulling.
+        if let Err(e) = result {
+            let msg = e.to_string();
+            assert!(
+                !msg.contains("pulling main repository"),
+                "pull failure should not propagate: {}",
+                msg
+            );
+        }
+    }
 }
